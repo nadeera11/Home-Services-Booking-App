@@ -25,7 +25,7 @@ test('preferred windows and service/travel intervals validate boundaries and gap
   assert.equal(overlaps('2026-10-07T00:30:00.000Z', 60, 30, booking), false); // actual gap
 });
 
-test('booking lifecycle, ownership, retries and concurrent slot reservations against isolated MongoDB', { skip: process.env.RUN_BOOKING_INTEGRATION !== '1', timeout: 90000 }, async () => {
+test('booking lifecycle, ownership, retries and concurrent slot reservations against isolated MongoDB', { skip: process.env.RUN_BOOKING_INTEGRATION !== '1', timeout: 180000 }, async () => {
   require('dotenv').config({ path: require('path').join(__dirname, '../.env'), quiet: true });
   const mongoose = require('mongoose');
   const dbName = 'fixmate_booking_test_' + require('crypto').randomBytes(8).toString('hex');
@@ -33,7 +33,7 @@ test('booking lifecycle, ownership, retries and concurrent slot reservations aga
   try {
     await mongoose.connect(process.env.MONGO_URI, { dbName, serverSelectionTimeoutMS: 10000 });
     const User = require('../models/User'), Booking = require('../models/Booking');
-    await Promise.all([User.init(), Booking.init(), require('../models/Complaint').init()]);
+    await Promise.all([User.init(), Booking.init(), require('../models/Complaint').init(), require('../models/Availability').init()]);
     const day = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
     const first = new Date(day + 'T08:00:00+05:30').toISOString();
     const second = new Date(day + 'T10:30:00+05:30').toISOString();
@@ -101,6 +101,9 @@ test('booking lifecycle, ownership, retries and concurrent slot reservations aga
     const alerts = (await call(provider, '/notifications')).body.notifications;
     assert.equal(alerts.length, 1); assert.equal(alerts[0].readAt, null);
     assert.equal((await call(a, '/notifications')).status, 403);
+
+
+
     assert.equal((await call(otherProvider, '/notifications')).body.notifications.length, 0);
     const readPath = '/' + created.id + '/notifications/' + alerts[0].id + '/read';
     assert.equal((await call(otherProvider, readPath, 'PATCH')).status, 404);
@@ -180,6 +183,18 @@ test('booking lifecycle, ownership, retries and concurrent slot reservations aga
     assert.equal((await call(a)).body.bookings.find(b => b.id === fid).previousApprovedQuote.totalMinor, 250035);
     const declined = await call(a, '/' + fid, 'PATCH', { action: 'decline_quote', quoteVersion: 2 });
     assert.equal(declined.body.booking.status, 'ongoing'); assert.equal(declined.body.booking.quote.totalMinor, 250035);
+    // Accepted revisions replace the total and resume work in both roles' persisted lists.
+    const revision = await call(provider, '/' + fid, 'PATCH', { ...quoteInput, bookingVersion: declined.body.booking.version });
+    assert.equal(revision.body.booking.status, 'quote_pending');
+    assert.equal((await call(provider, '/' + fid, 'PATCH', { action: 'complete', bookingVersion: declined.body.booking.version })).status, 409);
+    const approvedRevision = await call(a, '/' + fid, 'PATCH', { action: 'approve_quote', quoteVersion: revision.body.booking.quote.version });
+    assert.equal(approvedRevision.body.booking.status, 'ongoing');
+    for (const user of [a, provider]) {
+      const persisted = (await call(user)).body.bookings.find(row => row.id === fid);
+      assert.equal(persisted.status, 'ongoing');
+      assert.equal(persisted.quote.version, revision.body.booking.quote.version);
+      assert.equal(persisted.quote.totalMinor, 250035);
+    }
     const done = await call(provider, '/' + fid, 'PATCH', { action: 'complete', totalMinor: 1 });
     assert.equal(done.body.booking.invoice.totalMinor, 250035);
     const cash = await pay(a, fid, { action: 'report', method: 'cash' });
@@ -321,6 +336,95 @@ test('booking lifecycle, ownership, retries and concurrent slot reservations aga
     assert.equal(handled.status, 200);
     assert.equal((await support(admin, '/' + report.id, 'PATCH', { status: 'Under Review', response: '', version: report.version })).status, 409);
     assert.equal((await support(owner, '?bookingId=' + created.id)).body.complaints[0].status, 'Resolved');
+    // Calendar and customer selection share explicit starts; old intervals are not converted.
+    const Availability = require('../models/Availability');
+    const cp = await make('CalendarProvider', 'provider', '0700000088');
+    tokens.set(String(cp._id), jwt.sign({ id: cp._id, role: cp.role }, process.env.JWT_SECRET, { expiresIn: '5m' }));
+    const calendarCall = async (user, path = '', method = 'GET', data) => {
+      const res = await fetch(base.replace('/bookings', '/providers/availability') + path, { method, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tokens.get(String(user._id)) }, body: data ? JSON.stringify(data) : undefined });
+      return { status: res.status, body: await res.json() };
+    };
+    const cd = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
+    const cs = time => new Date(cd + 'T' + time + ':00+05:30').toISOString();
+    const allDays = Object.fromEntries(Array.from({ length: 7 }, (_, i) => [i, true]));
+    const rawDay = cd.split('-').map(Number).join('-');
+    const old = await Availability.create({ provider: cp._id, workingDays: allDays, offDates: ['legacy-unrecognized-date'], slots: [{ dateKey: rawDay, start: 540, end: 660, title: 'Old interval', type: 'available' }] });
+    assert.equal((await calendarCall(a)).status, 403);
+    let calendar = (await calendarCall(cp)).body;
+    assert.equal(calendar.legacySlots.length, 1); assert.deepEqual(calendar.slots, []);
+    assert.equal((await calendarCall(cp, '/slot', 'POST', { dateKey: cd, start: 540, end: 660 })).status, 409);
+    for (const startsAt of [cs('08:00'), cs('10:30'), cs('14:00')]) assert.equal((await call(cp, '/slots', 'POST', { startsAt })).status, 200);
+    const available = () => call(a, '/availability/' + cp._id);
+    assert.equal((await available()).body.slots.length, 3);
+    const cPayload = { providerId: String(cp._id), startsAt: cs('08:00'), scheduleMode: 'published', acceptQuoteRequest: true, problem: 'Calendar test', location: 'Test only', requestId: 'calendar-request' };
+    const cb = (await call(a, '', 'POST', cPayload)).body.booking;
+    calendar = (await calendarCall(cp)).body;
+    assert.ok(calendar.bookings.some(b => b.id === cb.id));
+    assert.equal(calendar.slots.find(s => s.startsAt === cs('08:00')).reserved, true);
+    assert.equal((await call(cp, '/slots', 'DELETE', { startsAt: cs('08:00') })).status, 409);
+    const calendarPaused = await calendarCall(cp, '/toggle-off-date', 'POST', { dateKey: rawDay, isOff: true, version: calendar.version });
+    assert.equal(calendarPaused.status, 200); assert.ok(calendarPaused.body.offDates.includes(cd));
+    assert.deepEqual((await available()).body.slots, []);
+    assert.equal((await call(b, '', 'POST', { ...cPayload, startsAt: cs('10:30'), requestId: 'paused-publish' })).status, 409);
+    assert.equal((await call(cp, '/slots', 'POST', { startsAt: cs('18:00') })).status, 409);
+    // Existing reservation is honoured despite a later pause.
+    assert.equal((await call(cp, '/' + cb.id, 'PATCH', { action: 'confirm' })).status, 200);
+    assert.equal((await calendarCall(cp, '/working-days', 'PUT', { workingDays: allDays, version: calendar.version })).status, 409);
+    calendar = (await calendarCall(cp)).body;
+    assert.equal((await calendarCall(cp, '/toggle-off-date', 'POST', { dateKey: cd, isOff: false, version: calendar.version })).status, 200);
+    calendar = (await calendarCall(cp)).body;
+    const weekday = new Date(cd + 'T00:00:00Z').getUTCDay();
+    const disabled = await calendarCall(cp, '/working-days', 'PUT', { workingDays: { ...allDays, [weekday]: false }, version: calendar.version });
+    assert.equal(disabled.status, 200); assert.deepEqual((await available()).body.slots, []);
+    // Preferences remain requests, not publications or reservations.
+    const preference = await call(b, '', 'POST', { ...cPayload, startsAt: cs('10:30'), scheduleMode: 'preferred', requestId: 'closed-preference' });
+    assert.equal(preference.status, 201); assert.equal((await Booking.findById(preference.body.booking.id)).slotKey, undefined);
+    assert.equal((await call(b, '/' + preference.body.booking.id, 'PATCH', { action: 'cancel' })).status, 200);
+    assert.equal((await calendarCall(cp, '/working-days', 'PUT', { workingDays: allDays, version: disabled.body.version })).status, 409);
+    calendar = (await calendarCall(cp)).body;
+    assert.equal((await calendarCall(cp, '/working-days', 'PUT', { workingDays: allDays, version: calendar.version })).status, 200);
+    assert.equal((await available()).body.slots.length, 3);
+    assert.equal((await call(a, '/' + cb.id, 'PATCH', { action: 'reschedule', startsAt: cs('10:30'), scheduleMode: 'published' })).status, 200);
+    let projected = (await available()).body.slots;
+    assert.equal(projected.find(s => s.startsAt === cs('08:00')).available, true);
+    assert.equal(projected.find(s => s.startsAt === cs('10:30')).available, false);
+    assert.equal((await call(a, '/' + cb.id, 'PATCH', { action: 'cancel' })).status, 200);
+    assert.ok((await available()).body.slots.every(s => s.available));
+    assert.equal((await call(cp, '/slots', 'DELETE', { startsAt: cs('08:00') })).status, 200);
+    assert.equal((await available()).body.slots.some(s => s.startsAt === cs('08:00')), false);
+    const directoryResponse = await fetch(base.replace('/bookings', '/providers/') + cp._id, { headers: { Authorization: 'Bearer ' + tokens.get(String(a._id)) } });
+    assert.equal(directoryResponse.status, 200);
+    assert.equal((await directoryResponse.json()).provider.nextAvailableAt, cs('10:30'));
+
+    const preserved = await Availability.findById(old._id);
+    assert.ok(preserved.offDates.includes('legacy-unrecognized-date'));
+    assert.equal(preserved.slots[0].dateKey, rawDay); assert.equal(preserved.slots[0].start, 540); assert.equal(preserved.slots[0].end, 660);
+    const notice = (await call(cp, '/notifications')).body.notifications[0];
+    assert.equal((await call(otherProvider, '/' + notice.bookingId + '/notifications/' + notice.id + '/read', 'PATCH')).status, 404);
+    assert.equal((await call(cp, '/' + notice.bookingId + '/notifications/' + notice.id + '/read', 'PATCH')).status, 200);
+    assert.ok((await call(cp, '/notifications')).body.notifications.find(n => n.id === notice.id).readAt);
+    assert.equal((await call(a, '/notifications')).status, 403);
+
+    // A separate provider keeps the repair-approval branch independent of other fixtures.
+    const repairProvider = await make('RepairApprovalProvider', 'provider', '0700000009');
+    tokens.set(String(repairProvider._id), jwt.sign({ id: repairProvider._id, role: 'provider' }, process.env.JWT_SECRET, { expiresIn: '5m' }));
+    const repairPricing = await call(repairProvider, '/pricing', 'PATCH', { type: 'inspection', inspectionFee: 750, inclusions: 'Diagnosis only' });
+    const repairRequest = await call(a, '', 'POST', { ...payload, providerId: String(repairProvider._id), scheduleMode: 'preferred', requestId: 'repair-approval', pricingVersion: repairPricing.body.pricing.version });
+    assert.equal(repairRequest.status, 201);
+    const rid = repairRequest.body.booking.id;
+    const repairAccepted = await call(repairProvider, '/' + rid, 'PATCH', { action: 'confirm' });
+    assert.equal(repairAccepted.body.booking.status, 'inspection_confirmed');
+    assert.equal((await call(a, '/' + rid, 'PATCH', { action: 'reschedule', bookingVersion: repairRequest.body.booking.version, startsAt: second, scheduleMode: 'preferred' })).status, 409);
+    assert.equal((await call(a)).body.bookings.find(row => row.id === rid).startsAt, first);
+    assert.equal((await call(repairProvider, '/' + rid, 'PATCH', { action: 'inspect' })).status, 200);
+    const approvedRepairQuote = await call(repairProvider, '/' + rid, 'PATCH', quoteInput);
+    assert.equal(approvedRepairQuote.body.booking.quote.totalMinor, 325035);
+    assert.equal((await call(a, '/' + rid, 'PATCH', { action: 'approve_quote', quoteVersion: approvedRepairQuote.body.booking.quote.version })).body.booking.status, 'confirmed');
+    assert.equal((await call(repairProvider, '/' + rid, 'PATCH', { action: 'start' })).body.booking.status, 'ongoing');
+    const repaired = await call(repairProvider, '/' + rid, 'PATCH', { action: 'complete' });
+    assert.equal(repaired.body.booking.invoice.totalMinor, 325035, 'repair invoice includes the disclosed inspection fee exactly once');
+    assert.equal(repaired.body.booking.payment.status, 'unpaid');
+
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));
     if (mongoose.connection.readyState === 1 && mongoose.connection.name === dbName && /^fixmate_booking_test_[a-f0-9]{16}$/.test(dbName)) await mongoose.connection.db.dropDatabase();

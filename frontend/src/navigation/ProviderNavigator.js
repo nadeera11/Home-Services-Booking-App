@@ -1,4 +1,5 @@
 import React from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet } from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -24,6 +25,7 @@ const TABS = [
 
 const ProviderTabs = () => {
   const { pendingCount } = useProviderData();
+  const insets = useSafeAreaInsets();
 
   return (
     <Tab.Navigator
@@ -33,7 +35,7 @@ const ProviderTabs = () => {
         tabBarActiveTintColor: COLORS.primary,
         tabBarInactiveTintColor: COLORS.textMuted,
         tabBarLabelStyle: styles.label,
-        tabBarStyle: styles.tabBar,
+        tabBarStyle: [styles.tabBar, { height: 70 + insets.bottom, paddingBottom: Math.max(8, insets.bottom) }],
         tabBarItemStyle: styles.item,
       }}
     >

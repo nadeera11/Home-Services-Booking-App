@@ -1,12 +1,13 @@
-import React from "react";
-import { View, Text, Pressable, ScrollView, StatusBar, StyleSheet, Alert } from "react-native";
+import React, { useState } from "react";
+import { View, Text, Pressable, ScrollView, StatusBar, StyleSheet, Alert, ActivityIndicator } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useIsFocused } from "@react-navigation/native";
 import { COLORS, SHADOWS } from "../../constants/theme";
 import { useAuth } from "../../context/AuthContext";
 import Avatar from "../../components/provider/Avatar";
 import ScreenHeader, { BellButton } from "../../components/provider/ScreenHeader";
-import { PROVIDER, EARNINGS, SERVICES, formatMoney } from "../../constants/providerData";
+import { useProviderData } from '../../context/ProviderContext';
+import { money, bookingPrice, bookingWhen } from '../../services/bookingService';
 
 const GREEN = "#0F8A5F";
 const STAR = "#E59A0C";
@@ -15,16 +16,16 @@ const STAR = "#E59A0C";
 // Earnings bar chart (plain Views, no extra packages)
 // ---------------------------------------------------------------------------
 const EarningsChart = ({ data }) => {
-  const max = Math.max(...data.map((d) => d.amount));
+  const max = Math.max(1, ...data.map((d) => d.amount));
   return (
     <View style={chart.row}>
       {data.map((d, i) => {
-        const height = Math.max(14, Math.round((d.amount / max) * 100));
+        const height = Math.round((d.amount / max) * 100);
         const current = i === data.length - 1;
         return (
           <View key={d.label} style={chart.col}>
             <Text style={[chart.value, current && chart.valueCurrent]}>
-              {(d.amount / 1000).toFixed(1)}k
+              {(d.amount / 100000).toFixed(1)}k
             </Text>
             <View style={[chart.bar, { height }, current && chart.barCurrent]} />
             <Text style={chart.label}>{d.label}</Text>
@@ -39,7 +40,7 @@ const chart = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "flex-end",
-    height: 150,
+    minHeight: 150,
     marginTop: 18,
     gap: 12,
     paddingHorizontal: 4,
@@ -55,8 +56,13 @@ const chart = StyleSheet.create({
 // ---------------------------------------------------------------------------
 // Screen
 // ---------------------------------------------------------------------------
-const ProviderProfileScreen = () => {
-  const { user, logout } = useAuth();
+const ProviderProfileScreen = ({ navigation }) => {
+  const { logout } = useAuth();
+  const { account: user, metrics, loaded, loading, error, load } = useProviderData();
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const details = user?.providerDetails || {};
+  const rating = details.reviewCount > 0 && Number.isFinite(details.rating) ? details.rating.toFixed(1) : '—';
+  const verified = user?.isVerified && user?.isApprovedByAdmin && details.approvalStatus === 'approved';
   const focused = useIsFocused();
   const name = user?.name || "Service Provider";
   const comingSoon = (title) => Alert.alert(title, "Coming soon.");
@@ -85,6 +91,9 @@ const ProviderProfileScreen = () => {
       </ScreenHeader>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {loading && <ActivityIndicator accessibilityLabel="Loading earnings" color={COLORS.primary} />}
+        {!!error && <Text accessibilityRole="alert" style={{ color: '#B52636' }}>{error}</Text>}
+        <Pressable accessibilityRole="button" disabled={loading} onPress={() => load()} style={{ minHeight: 48, justifyContent: 'center' }}><Text style={styles.editText}>Refresh earnings</Text></Pressable>
         {/* Profile card */}
         <View style={styles.card}>
           <View style={styles.profileTop}>
@@ -96,25 +105,25 @@ const ProviderProfileScreen = () => {
                 radius={18}
                 fontSize={24}
               />
-              {PROVIDER.verified && (
+              {verified && (
                 <View style={styles.verifyBadge}>
                   <MaterialCommunityIcons name="check-decagram" size={22} color={COLORS.primary} />
                 </View>
               )}
             </View>
             <View style={styles.profileInfo}>
-              <Text style={styles.profileName} numberOfLines={1}>
+              <Text style={styles.profileName} >
                 {name}
               </Text>
-              <Text style={styles.profileRole} numberOfLines={1}>
-                {PROVIDER.category} · {PROVIDER.experience}
+              <Text style={styles.profileRole} >
+                {details.category || 'Service provider'}{details.experience ? ' · ' + details.experience : ''}
               </Text>
               <View style={styles.metaRow}>
                 <MaterialCommunityIcons name="star" size={16} color={STAR} />
                 <Text style={styles.ratingText}>
-                  {PROVIDER.rating.toFixed(1)} <Text style={styles.reviewText}>({PROVIDER.reviews})</Text>
+                  {rating} <Text style={styles.reviewText}>({details.reviewCount || 0})</Text>
                 </Text>
-                {PROVIDER.verified && (
+                {verified && (
                   <View style={styles.verifiedPill}>
                     <View style={styles.verifiedDot} />
                     <Text style={styles.verifiedText}>Verified provider</Text>
@@ -126,9 +135,9 @@ const ProviderProfileScreen = () => {
 
           <View style={styles.statsPanel}>
             {[
-              [String(PROVIDER.jobsDone), "Jobs done"],
-              [`${PROVIDER.acceptance}%`, "Acceptance"],
-              [PROVIDER.rating.toFixed(1), "Rating"],
+              [loaded ? String(metrics.completed) : "—", "Jobs done"],
+              [loaded ? String(metrics.active.length) : "—", "Active jobs"],
+              [rating, "Rating"],
             ].map(([value, label], i) => (
               <View key={label} style={[styles.stat, i > 0 && styles.statDivider]}>
                 <Text style={styles.statValue}>{value}</Text>
@@ -142,39 +151,38 @@ const ProviderProfileScreen = () => {
         <View style={[styles.card, styles.cardSpaced]}>
           <View style={styles.earningsTop}>
             <View>
-              <Text style={styles.mutedSmall}>Earnings this month</Text>
-              <Text style={styles.earningsValue}>{formatMoney(EARNINGS.month)}</Text>
+              <Text style={styles.mutedSmall}>Payments received this month</Text>
+              <Text style={styles.earningsValue}>{loaded ? money(metrics.monthReceived) : '—'}</Text>
             </View>
             <View style={styles.pendingCol}>
-              <Text style={styles.mutedSmall}>Pending</Text>
-              <Text style={styles.pendingValue}>{formatMoney(EARNINGS.pendingPayout)}</Text>
+              <Text style={styles.mutedSmall}>Awaiting confirmation</Text>
+              <Text style={styles.pendingValue}>{loaded ? money(metrics.awaiting) : '—'}</Text>
             </View>
           </View>
 
-          <EarningsChart data={EARNINGS.weeks} />
+          <Text style={[styles.mutedSmall, { marginTop: 12 }]}>Unpaid invoices: {loaded ? money(metrics.unpaid) : '—'}</Text>
+          <Text style={[styles.mutedSmall, { marginTop: 12 }]}>Confirmed cash and bank receipts, grouped by day of month in Sri Lanka time. No platform payouts.</Text>
+          {loaded && <EarningsChart data={metrics.weeks} />}
+          {loaded && metrics.monthReceived === 0 && <Text style={styles.mutedSmall}>No confirmed receipts this month.</Text>}
 
           <Pressable
-            onPress={() => comingSoon("Transaction history")}
+            onPress={() => setHistoryOpen(v => !v)}
             style={({ pressed }) => [styles.historyBtn, pressed && styles.pressed]}
             accessibilityRole="button"
           >
             <MaterialCommunityIcons name="receipt-text-outline" size={20} color={COLORS.textPrimary} />
-            <Text style={styles.historyText}>View transaction history</Text>
+            <Text style={styles.historyText}>{historyOpen ? "Hide payment history" : "View payment history"}</Text>
           </Pressable>
         </View>
 
+        {historyOpen && <View style={[styles.card, styles.cardSpaced]}><Text style={styles.cardTitle}>Invoices & receipts</Text>{!metrics.invoices.length && <Text style={styles.mutedSmall}>{loaded ? 'No invoices yet.' : 'Load bookings to see payment history.'}</Text>}{metrics.invoices.map(b => <Pressable key={b.id} accessibilityRole="button" onPress={() => navigation.navigate('Requests', { bookingId: b.id, openRequest: Date.now() })} style={styles.serviceRow}><View style={styles.serviceText}><Text style={styles.serviceName}>{b.customerName}</Text><Text style={styles.serviceUnit}>{b.invoice.number}</Text><Text style={styles.serviceUnit}>{b.payment?.status === 'paid' ? 'Received · ' + bookingWhen(b.payment.paidAt) : b.payment?.status === 'awaiting_confirmation' ? 'Reported · awaiting your confirmation' : 'Unpaid'}</Text></View><Text style={styles.servicePrice}>{money(b.invoice.totalMinor)}</Text></Pressable>)}</View>}
         {/* Services & pricing */}
         <View style={[styles.card, styles.cardSpaced]}>
           <Text style={styles.cardTitle}>Services & pricing</Text>
-          {SERVICES.map((s, i) => (
-            <View key={s.id} style={[styles.serviceRow, i < SERVICES.length - 1 && styles.serviceDivider]}>
-              <View style={styles.serviceText}>
-                <Text style={styles.serviceName}>{s.name}</Text>
-                <Text style={styles.serviceUnit}>{s.unit}</Text>
-              </View>
-              <Text style={styles.servicePrice}>{formatMoney(s.price)}</Text>
-            </View>
-          ))}
+          <Text style={[styles.serviceName, { marginTop: 12 }]}>{details.category || 'Service not set'}</Text>
+          <Text style={styles.serviceUnit}>{bookingPrice({ pricing: details.pricing })}</Text>
+          {!!details.pricing?.inclusions && <Text style={styles.serviceUnit}>{details.pricing.inclusions}</Text>}
+
         </View>
 
         {/* Log out */}
@@ -193,7 +201,7 @@ const ProviderProfileScreen = () => {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.background },
-  content: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 28 },
+  content: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 28, width: "100%", maxWidth: 900, alignSelf: "center" },
   pressed: { opacity: 0.85 },
 
   editBtn: {
@@ -262,7 +270,7 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 12, color: COLORS.textMuted, marginTop: 3 },
 
   // Earnings
-  earningsTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
+  earningsTop: { flexDirection: "row", flexWrap: "wrap", gap: 16, justifyContent: "space-between", alignItems: "flex-start" },
   mutedSmall: { fontSize: 13, color: COLORS.textMuted },
   earningsValue: {
     fontSize: 28,
@@ -278,7 +286,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    height: 50,
+    minHeight: 50,
+    paddingVertical: 10,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: COLORS.inputBorder,

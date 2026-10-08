@@ -38,7 +38,6 @@ const DEFAULT_REGION = {
   longitudeDelta: 0.05,
 };
 
-const HAS_UNREAD_NOTIFICATIONS = true;
 
 const CATEGORIES = [
   { id: "plumbing", name: "Plumbing", icon: "water-outline", pros: "240+ pros" },
@@ -219,12 +218,11 @@ const CustomerDashboard = ({ navigation }) => {
 
             <TouchableOpacity
               style={styles.bell}
-              onPress={() => comingSoon("Notifications")}
+              onPress={() => navigation.navigate("Bookings")}
               accessibilityRole="button"
-              accessibilityLabel="Notifications"
+              accessibilityLabel="Booking updates in My Bookings"
             >
               <MaterialCommunityIcons name="bell-outline" size={22} color="#FFFFFF" />
-              {HAS_UNREAD_NOTIFICATIONS && <View style={styles.bellDot} />}
             </TouchableOpacity>
           </View>
 
@@ -520,7 +518,6 @@ const CustomerDashboard = ({ navigation }) => {
     </View>
   );
 };
-
 const styles = StyleSheet.create({
   screen: {
     flex: 1,

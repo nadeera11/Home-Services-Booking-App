@@ -57,6 +57,30 @@ const availabilitySchema = new mongoose.Schema(
   }
 );
 
+// Legacy calendar keys were sometimes saved without zero padding. Read them
+// canonically without destroying the original interval records.
+const canonicalDate = value => {
+  const match = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(value || '');
+  if (!match) return null;
+  const key = `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+  const date = new Date(key + 'T00:00:00Z');
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === key ? key : null;
+};
+availabilitySchema.statics.calendarFor = async function(provider, session) {
+  const row = await this.findOne({ provider }).session(session || null).lean();
+  return {
+    // No old calendar means no restriction; do not silently hide existing Sundays.
+    workingDays: row?.workingDays || { 0: true, 1: true, 2: true, 3: true, 4: true, 5: true, 6: true },
+    offDates: [...new Set((row?.offDates || []).map(canonicalDate).filter(Boolean))],
+    unrecognizedOffDates: (row?.offDates || []).filter(value => !canonicalDate(value)),
+    legacySlots: row?.slots || [],
+  };
+};
+availabilitySchema.statics.isOpen = (calendar, start) => {
+  const local = new Date(new Date(start).getTime() + 19800000);
+  return calendar.workingDays[local.getUTCDay()] !== false && !calendar.offDates.includes(local.toISOString().slice(0, 10));
+};
+availabilitySchema.statics.canonicalDate = canonicalDate;
 const Availability = mongoose.model("Availability", availabilitySchema);
 
 module.exports = Availability;

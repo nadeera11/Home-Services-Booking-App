@@ -6,7 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { bookingService, bookingWhen } from '../../services/bookingService';
 import { COLORS } from '../../constants/theme';
 export default function MessagesScreen({
-  embedded = false
+  embedded = false, route, bookingId = route?.params?.bookingId, openRequest = route?.params?.openRequest
 }) {
   const {
       user
@@ -19,7 +19,7 @@ export default function MessagesScreen({
     [error, setError] = useState(''),
     [loading, setLoading] = useState(true),
     [sending, setSending] = useState(false);
-  const revision = useRef(0);
+  const revision = useRef(0), opened = useRef(null);
   const lock = useRef(false),
     draft = useRef(null),
     scroll = useRef(null);
@@ -27,13 +27,20 @@ export default function MessagesScreen({
     setLoading(true);
     setError('');
     return bookingService.list(signal).then(rows => {
-      if (!signal.aborted) setJobs(rows.sort((a, b) => new Date(b.lastMessage?.createdAt || b.createdAt) - new Date(a.lastMessage?.createdAt || a.createdAt)));
+      if (!signal.aborted) {
+        setJobs(rows.sort((a, b) => new Date(b.lastMessage?.createdAt || b.createdAt) - new Date(a.lastMessage?.createdAt || a.createdAt)));
+        const target = rows.find(b => b.id === bookingId);
+        if (bookingId && opened.current !== openRequest) {
+          if (target) { opened.current = openRequest; revision.current++; setMessages([]); setText(''); draft.current = null; setSelected(target); }
+          else setError('This booking conversation is no longer available. Refresh conversations to check again.');
+        }
+      }
     }).catch(e => {
       if (!signal.aborted) setError(e.response?.data?.message || 'Unable to load conversations. Try again.');
     }).finally(() => {
       if (!signal.aborted) setLoading(false);
     });
-  }, []);
+  }, [bookingId, openRequest]);
   useFocusEffect(useCallback(() => {
     const c = new AbortController();
     void load(c.signal);
