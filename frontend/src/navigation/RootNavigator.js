@@ -1,5 +1,5 @@
 import React from "react";
-import { View, ActivityIndicator, StyleSheet } from "react-native";
+import { View, ActivityIndicator, StyleSheet, Image, StatusBar } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useAuth } from "../context/AuthContext";
 import { COLORS } from "../constants/theme";
@@ -17,7 +17,15 @@ const RootNavigator = () => {
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
+        <View style={styles.logoContainer}>
+          <Image
+            source={require("../../assets/images/FixMate Logo.png")}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
+        </View>
+        <ActivityIndicator size="large" color={COLORS.secondary} style={{ marginTop: 20 }} />
       </View>
     );
   }
@@ -42,7 +50,17 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: COLORS.secondary,
+    backgroundColor: COLORS.primary,
+  },
+  logoContainer: {
+    width: 140,
+    height: 140,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  logoImage: {
+    width: "100%",
+    height: "100%",
   },
 });
 

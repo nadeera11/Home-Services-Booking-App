@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -7,58 +7,16 @@ import {
   StatusBar,
   StyleSheet,
   Alert,
+  ActivityIndicator,
+  RefreshControl,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
 import { COLORS, SHADOWS } from "../../constants/theme";
+import adminService from "../../services/adminService";
 
-// ---------------------------------------------------------------------------
-// Placeholder data. Replace with a call to adminService once the backend
-// exposes the reports endpoint. One entry per period in the dropdown.
-// ---------------------------------------------------------------------------
-const PERIODS = {
-  "Last 7 days": {
-    stats: {
-      total: { value: "742", dir: "up", good: true, note: "5.1% vs prior" },
-      completed: { value: "641", dir: "up", good: true, note: "4.3% vs prior" },
-      cancelled: { value: "41", dir: "down", good: true, note: "1.2% vs prior" },
-      rating: { value: "4.74", dir: "up", good: true, note: "0.02 points" },
-    },
-    labels: ["24 Sep", "27 Sep", "30 Sep"],
-    bookings: [96, 104, 99, 110, 108, 118, 107],
-    cancellations: [6, 5, 6, 5, 7, 5, 7],
-    customers: [0, 0.2, 0.5, 0.7, 0.9, 1.0, 1.2],
-    providers: [0, 0.1, 0.3, 0.4, 0.5, 0.6, 0.7],
-  },
-  "Last 30 days": {
-    stats: {
-      total: { value: "3,148", dir: "up", good: true, note: "12.4% vs prior" },
-      completed: { value: "2,712", dir: "up", good: true, note: "9.1% vs prior" },
-      cancelled: { value: "184", dir: "down", good: true, note: "2.3% vs prior" },
-      rating: { value: "4.72", dir: "up", good: true, note: "0.08 points" },
-    },
-    labels: ["1 Sep", "15 Sep", "30 Sep"],
-    bookings: [88, 98, 94, 112, 106, 120, 132],
-    cancellations: [5, 5, 5, 6, 6, 7, 6],
-    customers: [0, 0.6, 1.5, 2.4, 3.1, 3.7, 4.2],
-    providers: [0, 0.4, 0.8, 1.5, 1.9, 2.4, 2.8],
-  },
-  "Last 90 days": {
-    stats: {
-      total: { value: "9,214", dir: "up", good: true, note: "18.6% vs prior" },
-      completed: { value: "7,968", dir: "up", good: true, note: "16.2% vs prior" },
-      cancelled: { value: "576", dir: "down", good: true, note: "4.1% vs prior" },
-      rating: { value: "4.69", dir: "up", good: true, note: "0.11 points" },
-    },
-    labels: ["2 Jul", "15 Aug", "30 Sep"],
-    bookings: [82, 90, 96, 101, 108, 117, 126],
-    cancellations: [7, 7, 6, 7, 6, 6, 6],
-    customers: [0, 2.1, 4.3, 6.0, 8.2, 10.4, 11.3],
-    providers: [0, 1.4, 2.8, 4.1, 5.5, 6.9, 7.9],
-  },
-};
-
-const PERIOD_OPTIONS = Object.keys(PERIODS);
+const PERIOD_OPTIONS = ["Last 7 days", "Last 30 days", "Last 90 days"];
 
 const PURPLE = COLORS.primary;
 const PURPLE_LIGHT = "#B9A6F8";
@@ -67,7 +25,7 @@ const GOOD = "#0F8A5F";
 const BAD = "#D93A3A";
 
 // ---------------------------------------------------------------------------
-// Minimal line chart built from plain Views (no extra packages needed).
+// Minimal line chart built from plain Views
 // ---------------------------------------------------------------------------
 const Segment = ({ x1, y1, x2, y2, color, thickness }) => {
   const dx = x2 - x1;
@@ -124,11 +82,12 @@ const LineChart = ({ series, labels, min, max, height = 150 }) => {
   const padY = 12;
   const plotW = Math.max(width - padX * 2, 0);
   const plotH = height - padY * 2;
+  const safeMax = max === min ? min + 1 : max;
 
   const toPoints = (data) =>
     data.map((v, i) => ({
       x: padX + (data.length > 1 ? i / (data.length - 1) : 0) * plotW,
-      y: padY + (1 - (v - min) / (max - min)) * plotH,
+      y: padY + (1 - (v - min) / (safeMax - min)) * plotH,
     }));
 
   return (
@@ -183,7 +142,6 @@ const LineChart = ({ series, labels, min, max, height = 150 }) => {
                       />
                     )
                   )}
-                  {/* Round the joints of solid lines */}
                   {!s.dashed &&
                     pts.map((p, i) => (
                       <View
@@ -208,8 +166,8 @@ const LineChart = ({ series, labels, min, max, height = 150 }) => {
       </View>
 
       <View style={chartStyles.labels}>
-        {labels.map((l) => (
-          <Text key={l} style={chartStyles.label}>
+        {labels.map((l, idx) => (
+          <Text key={idx} style={chartStyles.label}>
             {l}
           </Text>
         ))}
@@ -245,9 +203,6 @@ const chartStyles = StyleSheet.create({
   },
 });
 
-// ---------------------------------------------------------------------------
-// Small pieces
-// ---------------------------------------------------------------------------
 const StatTile = ({ label, value, dir, good, note }) => {
   const color = good ? GOOD : BAD;
   return (
@@ -273,7 +228,10 @@ const LegendItem = ({ color, label }) => (
   </View>
 );
 
-const niceMax = (values, factor, step) => Math.ceil((Math.max(...values) * factor) / step) * step;
+const niceMax = (values, factor, step) => {
+  const maxVal = Math.max(...values, 1);
+  return Math.ceil((maxVal * factor) / step) * step;
+};
 
 // ---------------------------------------------------------------------------
 // Screen
@@ -282,10 +240,47 @@ const ReportsScreen = () => {
   const insets = useSafeAreaInsets();
   const [period, setPeriod] = useState("Last 30 days");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [reportsData, setReportsData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const d = PERIODS[period];
-  const bookingsMax = niceMax([...d.bookings, ...d.cancellations], 1.1, 10);
-  const growthMax = niceMax([...d.customers, ...d.providers], 1.15, 0.5);
+  const fetchAnalytics = async (isRefreshing = false) => {
+    try {
+      if (isRefreshing) setRefreshing(true);
+      else setLoading(true);
+
+      const data = await adminService.getReportsAnalytics();
+      setReportsData(data);
+    } catch (err) {
+      console.error("Fetch Reports Analytics Error:", err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchAnalytics();
+    }, [])
+  );
+
+  const d = reportsData?.[period] || {
+    stats: {
+      total: { value: "0", dir: "up", good: true, note: "0.0% vs prior" },
+      completed: { value: "0", dir: "up", good: true, note: "0.0% vs prior" },
+      cancelled: { value: "0", dir: "down", good: true, note: "0.0% vs prior" },
+      rating: { value: "5.00", dir: "up", good: true, note: "0.00 points" },
+    },
+    labels: ["Start", "Middle", "Now"],
+    bookings: [0, 0, 0, 0, 0, 0, 0],
+    cancellations: [0, 0, 0, 0, 0, 0, 0],
+    customers: [0, 0, 0, 0, 0, 0, 0],
+    providers: [0, 0, 0, 0, 0, 0, 0],
+  };
+
+  const bookingsMax = niceMax([...d.bookings, ...d.cancellations], 1.1, 5);
+  const growthMax = niceMax([...d.customers, ...d.providers], 1.15, 5);
 
   return (
     <View style={styles.screen}>
@@ -299,7 +294,7 @@ const ReportsScreen = () => {
         </View>
         <TouchableOpacity
           style={styles.menuButton}
-          onPress={() => Alert.alert("More options", "Coming soon.")}
+          onPress={() => Alert.alert("More options", "Report exports will be available in the next release.")}
           accessibilityRole="button"
           accessibilityLabel="More options"
         >
@@ -313,6 +308,13 @@ const ReportsScreen = () => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         onScrollBeginDrag={() => setMenuOpen(false)}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => fetchAnalytics(true)}
+            colors={[COLORS.primary]}
+          />
+        }
       >
         {/* Period selector */}
         <View style={styles.periodRow}>
@@ -352,50 +354,56 @@ const ReportsScreen = () => {
           </View>
         </View>
 
-        {/* Stat tiles */}
-        <View style={styles.grid}>
-          <StatTile label="Total bookings" {...d.stats.total} />
-          <StatTile label="Completed" {...d.stats.completed} />
-          <StatTile label="Cancellations" {...d.stats.cancelled} />
-          <StatTile label="Average rating" {...d.stats.rating} />
-        </View>
+        {loading && !refreshing ? (
+          <ActivityIndicator size="large" color={COLORS.primary} style={{ marginVertical: 40 }} />
+        ) : (
+          <>
+            {/* Stat tiles */}
+            <View style={styles.grid}>
+              <StatTile label="Total bookings" {...d.stats.total} />
+              <StatTile label="Completed" {...d.stats.completed} />
+              <StatTile label="Cancellations" {...d.stats.cancelled} />
+              <StatTile label="Average rating" {...d.stats.rating} />
+            </View>
 
-        {/* Booking performance */}
-        <Text style={styles.sectionTitle}>Booking performance</Text>
-        <View style={styles.chartCard}>
-          <LineChart
-            labels={d.labels}
-            min={0}
-            max={bookingsMax}
-            series={[
-              { data: d.bookings, color: PURPLE },
-              { data: d.cancellations, color: PURPLE_LIGHT, dashed: true },
-            ]}
-          />
-          <View style={[styles.legend, styles.legendLeft]}>
-            <LegendItem color={PURPLE} label="Bookings" />
-            <LegendItem color={PURPLE_LIGHT} label="Cancellations" />
-          </View>
-        </View>
+            {/* Booking performance */}
+            <Text style={styles.sectionTitle}>Booking performance</Text>
+            <View style={styles.chartCard}>
+              <LineChart
+                labels={d.labels}
+                min={0}
+                max={bookingsMax}
+                series={[
+                  { data: d.bookings, color: PURPLE },
+                  { data: d.cancellations, color: PURPLE_LIGHT, dashed: true },
+                ]}
+              />
+              <View style={[styles.legend, styles.legendLeft]}>
+                <LegendItem color={PURPLE} label="Bookings" />
+                <LegendItem color={PURPLE_LIGHT} label="Cancellations" />
+              </View>
+            </View>
 
-        {/* User growth */}
-        <Text style={styles.sectionTitle}>User growth</Text>
-        <View style={styles.chartCard}>
-          <View style={[styles.legend, styles.legendSpread]}>
-            <LegendItem color={PURPLE} label="Customers" />
-            <LegendItem color={GRAY} label="Providers" />
-          </View>
-          <LineChart
-            labels={d.labels}
-            min={0}
-            max={growthMax}
-            series={[
-              { data: d.providers, color: GRAY },
-              { data: d.customers, color: PURPLE },
-            ]}
-          />
-          <Text style={styles.caption}>Growth since the start of the period</Text>
-        </View>
+            {/* User growth */}
+            <Text style={styles.sectionTitle}>User growth</Text>
+            <View style={styles.chartCard}>
+              <View style={[styles.legend, styles.legendSpread]}>
+                <LegendItem color={PURPLE} label="Customers" />
+                <LegendItem color={GRAY} label="Providers" />
+              </View>
+              <LineChart
+                labels={d.labels}
+                min={0}
+                max={growthMax}
+                series={[
+                  { data: d.providers, color: GRAY },
+                  { data: d.customers, color: PURPLE },
+                ]}
+              />
+              <Text style={styles.caption}>Growth since the start of the period</Text>
+            </View>
+          </>
+        )}
       </ScrollView>
     </View>
   );

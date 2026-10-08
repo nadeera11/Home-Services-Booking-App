@@ -11,6 +11,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Image,
 } from "react-native";
 import { COLORS } from "../../constants/theme";
 import { useAuth } from "../../context/AuthContext";
@@ -68,8 +69,12 @@ const LoginScreen = ({ navigation }) => {
         >
           {/* Header & Logo */}
           <View style={styles.headerContainer}>
-            <View style={styles.logoBadge}>
-              <Text style={styles.logoBadgeText}>FM</Text>
+            <View style={styles.logoContainer}>
+              <Image
+                source={require("../../../assets/images/FixMate Logo.png")}
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
             <Text style={styles.title}>Welcome Back!</Text>
             <Text style={styles.subtitle}>Sign in to continue to FixMate</Text>
@@ -203,24 +208,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 28,
   },
-  logoBadge: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    backgroundColor: COLORS.primary,
+  logoContainer: {
+    width: 100,
+    height: 100,
+    marginBottom: 12,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 16,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 5,
   },
-  logoBadgeText: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: COLORS.secondary,
+  logoImage: {
+    width: "100%",
+    height: "100%",
   },
   title: {
     fontSize: 28,

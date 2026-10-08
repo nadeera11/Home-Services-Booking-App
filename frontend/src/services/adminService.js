@@ -39,6 +39,18 @@ export const adminService = {
     const response = await api.delete("/admin/profile");
     return response.data;
   },
+
+  // Fetch dashboard summary statistics from DB
+  getDashboardStats: async () => {
+    const response = await api.get("/admin/dashboard-stats");
+    return response.data;
+  },
+
+  // Fetch reports & analytics data from DB
+  getReportsAnalytics: async () => {
+    const response = await api.get("/admin/reports-analytics");
+    return response.data;
+  },
 };
 
 export default adminService;

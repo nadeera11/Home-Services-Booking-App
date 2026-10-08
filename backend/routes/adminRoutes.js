@@ -7,6 +7,8 @@ const {
   createAdmin,
   updateAdminProfile,
   deleteAdminProfile,
+  getDashboardStats,
+  getReportsAnalytics,
 } = require("../controllers/adminController");
 const { protect } = require("../middleware/authMiddleware");
 const { authorizeRoles } = require("../middleware/roleMiddleware");
@@ -15,6 +17,8 @@ const { authorizeRoles } = require("../middleware/roleMiddleware");
 router.use(protect);
 router.use(authorizeRoles("admin"));
 
+router.get("/dashboard-stats", getDashboardStats);
+router.get("/reports-analytics", getReportsAnalytics);
 router.get("/providers", getProviders);
 router.put("/verify-provider/:id", verifyProvider);
 router.get("/users", getAllUsers);
