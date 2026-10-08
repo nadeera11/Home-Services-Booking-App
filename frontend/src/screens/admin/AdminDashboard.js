@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ScrollView,
   StatusBar,
-  Alert,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -48,15 +47,6 @@ const getGreeting = (d) => {
   if (h < 17) return "Good afternoon";
   return "Good evening";
 };
-
-const getInitials = (name = "") =>
-  name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0].toUpperCase())
-    .join("") || "AD";
 
 const formatNumber = (n) => n.toLocaleString("en-US");
 

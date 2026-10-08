@@ -2,6 +2,7 @@ import api from "./api";
 import { setSecureItem, deleteSecureItem } from "../utils/storage";
 
 export const authService = {
+  updateProfile: async values => (await api.patch('/auth/profile', values)).data.user,
   // Login user
   login: async (identifier, password) => {
     const response = await api.post("/auth/login", { identifier, password });

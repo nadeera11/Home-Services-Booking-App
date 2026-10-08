@@ -1,7 +1,8 @@
 import React from "react";
 import { StyleSheet } from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { Image } from "expo-image";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COLORS } from "../constants/theme";
 
 import CustomerDashboard from "../screens/customer/CustomerDashboard";
@@ -11,9 +12,15 @@ import MessagesScreen from "../screens/customer/MessagesScreen";
 import ProfileScreen from "../screens/customer/ProfileScreen";
 
 const Tab = createBottomTabNavigator();
+const TAB_ICONS = {
+  Home: require('../../assets/images/booking/nav-imgSvg.svg'),
+  Explore: require('../../assets/images/booking/nav-imgSvg1.svg'),
+  Bookings: require('../../assets/images/booking/nav-imgSvg2.svg'),
+  Messages: require('../../assets/images/booking/nav-imgSvg3.svg'),
+  Profile: require('../../assets/images/booking/nav-imgSvg4.svg'),
+};
 
-// Placeholder until unread messages come from the backend.
-const UNREAD_MESSAGES = 2;
+
 
 // [route name, label, outline icon, filled icon, screen]
 const TABS = [
@@ -25,6 +32,7 @@ const TABS = [
 ];
 
 const CustomerNavigator = () => {
+  const insets = useSafeAreaInsets();
   return (
     <Tab.Navigator
       initialRouteName="Home"
@@ -33,21 +41,21 @@ const CustomerNavigator = () => {
         tabBarActiveTintColor: COLORS.primary,
         tabBarInactiveTintColor: COLORS.textMuted,
         tabBarLabelStyle: styles.label,
-        tabBarStyle: styles.tabBar,
+        tabBarStyle: [styles.tabBar, { height: 70 + insets.bottom, paddingBottom: Math.max(8, insets.bottom) }],
         tabBarItemStyle: styles.item,
       }}
     >
-      {TABS.map(([name, label, outline, filled, component]) => (
+      {TABS.map(([name, label, , , component]) => (
         <Tab.Screen
           key={name}
           name={name}
           component={component}
           options={{
             tabBarLabel: label,
-            tabBarBadge: name === "Messages" && UNREAD_MESSAGES > 0 ? UNREAD_MESSAGES : undefined,
+
             tabBarBadgeStyle: styles.badge,
-            tabBarIcon: ({ focused, color, size }) => (
-              <MaterialCommunityIcons name={focused ? filled : outline} size={size} color={color} />
+            tabBarIcon: ({ color }) => (
+              <Image accessible={false} source={TAB_ICONS[name]} tintColor={color} style={{ width: 22, height: 22 }} contentFit="contain" />
             ),
           }}
         />

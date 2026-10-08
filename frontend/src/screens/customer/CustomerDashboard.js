@@ -524,31 +524,30 @@ const CustomerDashboard = ({ navigation }) => {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.background
   },
   scrollContent: {
-    paddingBottom: 28,
+    paddingBottom: 28
   },
-
   // Hero
   hero: {
     backgroundColor: COLORS.primary,
     paddingHorizontal: 20,
-    paddingBottom: 49,
+    paddingBottom: 49
   },
   heroTop: {
     flexDirection: "row",
     alignItems: "flex-start",
-    justifyContent: "space-between",
+    justifyContent: "space-between"
   },
   heroText: {
     flex: 1,
-    paddingRight: 12,
+    paddingRight: 12
   },
   greeting: {
     fontSize: 22,
     fontWeight: "800",
-    color: "#FFFFFF",
+    color: "#FFFFFF"
   },
   locationRow: {
     flexDirection: "row",
@@ -573,7 +572,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: "rgba(255,255,255,0.2)",
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "center"
   },
   bellDot: {
     position: "absolute",
@@ -582,7 +581,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#FFFFFF"
   },
   search: {
     flexDirection: "row",
@@ -592,13 +591,12 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     paddingHorizontal: 16,
     marginTop: 18,
-    gap: 12,
+    gap: 12
   },
   searchText: {
     fontSize: 15,
-    color: COLORS.disabledText,
+    color: COLORS.disabledText
   },
-
   // Categories card
   categoriesCard: {
     backgroundColor: COLORS.cardBg,
@@ -608,37 +606,37 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 8,
     paddingHorizontal: 16,
-    ...SHADOWS.small,
+    ...SHADOWS.small
   },
   sectionRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "space-between"
   },
   cardTitle: {
     fontSize: 17,
     fontWeight: "800",
-    color: COLORS.textPrimary,
+    color: COLORS.textPrimary
   },
   link: {
     fontSize: 14,
     fontWeight: "800",
-    color: COLORS.primary,
+    color: COLORS.primary
   },
   linkRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "center"
   },
   categoryGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    marginTop: 18,
+    marginTop: 18
   },
   category: {
     width: "33.333%",
     alignItems: "center",
     marginBottom: 20,
-    paddingHorizontal: 4,
+    paddingHorizontal: 4
   },
   categoryIcon: {
     width: 52,
@@ -646,42 +644,40 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: "#EEEAFD",
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "center"
   },
   categoryName: {
     fontSize: 13,
     fontWeight: "800",
     color: COLORS.textPrimary,
     marginTop: 10,
-    textAlign: "center",
+    textAlign: "center"
   },
   categoryPros: {
     fontSize: 11,
     color: COLORS.textMuted,
     marginTop: 4,
-    textAlign: "center",
+    textAlign: "center"
   },
-
   // Sections
   sectionPad: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 20
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: "800",
-    color: COLORS.textPrimary,
+    color: COLORS.textPrimary
   },
   nearbyHeader: {
     marginTop: 26,
-    marginBottom: 14,
+    marginBottom: 14
   },
-
   // Popular services
   serviceList: {
     paddingHorizontal: 20,
     paddingTop: 14,
     paddingBottom: 4,
-    gap: 12,
+    gap: 12
   },
   serviceCard: {
     width: 172,
@@ -689,7 +685,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.cardBg,
     borderRadius: 22,
     padding: 16,
-    ...SHADOWS.small,
+    ...SHADOWS.small
   },
   serviceIcon: {
     width: 40,
@@ -697,27 +693,26 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: "#EEEAFD",
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "center"
   },
   serviceTitle: {
     fontSize: 15,
     fontWeight: "800",
     color: COLORS.textPrimary,
-    marginTop: 18,
+    marginTop: 18
   },
   serviceMeta: {
     fontSize: 13,
     color: COLORS.textMuted,
-    marginTop: 4,
+    marginTop: 4
   },
   servicePrice: {
     fontSize: 14,
     fontWeight: "800",
     color: COLORS.primary,
     marginTop: "auto",
-    paddingTop: 14,
+    paddingTop: 14
   },
-
   // Nearby professionals
   proCard: {
     flexDirection: "row",
@@ -726,7 +721,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 14,
     marginBottom: 12,
-    ...SHADOWS.small,
+    ...SHADOWS.small
   },
   proAvatar: {
     width: 46,
@@ -734,27 +729,27 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: "#EEEAFD",
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "center"
   },
   proAvatarText: {
     fontSize: 14,
     fontWeight: "800",
-    color: COLORS.primary,
+    color: COLORS.primary
   },
   proInfo: {
     flex: 1,
     marginLeft: 12,
-    marginRight: 8,
+    marginRight: 8
   },
   proName: {
     fontSize: 15,
     fontWeight: "800",
-    color: COLORS.textPrimary,
+    color: COLORS.textPrimary
   },
   proMeta: {
     fontSize: 13,
     color: COLORS.textMuted,
-    marginTop: 3,
+    marginTop: 3
   },
   proRating: {
     flexDirection: "row",
@@ -763,7 +758,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 999,
-    gap: 3,
+    gap: 3
   },
   proRatingText: {
     fontSize: 12,
@@ -939,5 +934,4 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 });
-
 export default CustomerDashboard;

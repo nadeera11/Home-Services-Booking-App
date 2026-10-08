@@ -10,6 +10,7 @@ const sanitizeUser = (user) => {
     email: user.email,
     phone: user.phone,
     role: user.role,
+    location: user.location || {},
     isVerified: user.isVerified,
     isApprovedByAdmin: user.isApprovedByAdmin,
     providerDetails: user.providerDetails || {},
@@ -528,6 +529,7 @@ const updateLocation = async (req, res) => {
 };
 
 module.exports = {
+  updateProfile,
   register,
   verifyOtp,
   resendOtp,

@@ -40,34 +40,16 @@ const LoginScreen = ({ navigation }) => {
     setLoading(false);
 
     if (result.success) {
-      // Role navigation handled by RootNavigator or direct replace
-      if (result.role === "customer") {
-        navigation.replace("CustomerNavigator");
-      } else if (result.role === "provider") {
-        navigation.replace("ProviderNavigator");
-      } else if (result.role === "admin") {
-        navigation.replace("AdminNavigator");
-      }
+      // RootNavigator switches to the signed-in user's role automatically.
+      return;
     } else if (result.requiresVerification) {
-      Alert.alert(
-        "Account Verification Required",
-        result.message || "Please verify your account before logging in.",
-        [
-          {
-            text: "Verify OTP Now",
-            onPress: () =>
-              navigation.navigate("OtpVerification", {
-                identifier: result.identifier || identifier.trim(),
-              }),
-          },
-        ]
-      );
+      navigation.navigate("OtpVerification", {
+        identifier: result.identifier || identifier.trim(),
+      });
     } else if (result.requiresAdminApproval) {
-      Alert.alert(
-        "🛡️ Admin Review Pending",
-        result.message ||
-          "Your Service Provider account is currently under review by an administrator. You will be able to log in once your NIC & documents are approved."
-      );
+      setErrorMessage(result.message || (result.approvalStatus === "rejected"
+        ? "Your provider application was rejected. Please contact support."
+        : "Your provider account is awaiting admin approval. Please log in after your documents are approved."));
     } else {
       setErrorMessage(result.message || "Invalid login credentials");
     }
@@ -191,7 +173,7 @@ const LoginScreen = ({ navigation }) => {
 
           {/* Footer Sign Up Link */}
           <View style={styles.footerContainer}>
-            <Text style={styles.footerText}>Don't have an account? </Text>
+            <Text style={styles.footerText}>{"Don't have an account? "}</Text>
             <TouchableOpacity onPress={() => navigation.navigate("Signup")}>
               <Text style={styles.signupLinkText}>Sign Up</Text>
             </TouchableOpacity>

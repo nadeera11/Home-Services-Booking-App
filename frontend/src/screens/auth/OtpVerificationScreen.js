@@ -10,7 +10,6 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
-  Alert,
 } from "react-native";
 import { COLORS } from "../../constants/theme";
 import { useAuth } from "../../context/AuthContext";
@@ -25,7 +24,7 @@ const OtpVerificationScreen = ({ route, navigation }) => {
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [countdown, setCountdown] = useState(60);
-  const [canResend, setCanResend] = useState(false);
+  const canResend = countdown === 0;
 
   useEffect(() => {
     let timer;
@@ -33,8 +32,6 @@ const OtpVerificationScreen = ({ route, navigation }) => {
       timer = setInterval(() => {
         setCountdown((prev) => prev - 1);
       }, 1000);
-    } else {
-      setCanResend(true);
     }
     return () => clearInterval(timer);
   }, [countdown]);
@@ -94,7 +91,6 @@ const OtpVerificationScreen = ({ route, navigation }) => {
     if (result.success) {
       setSuccessMessage("A new OTP code has been generated and logged in backend console.");
       setCountdown(60);
-      setCanResend(false);
     } else {
       setErrorMessage(result.message || "Failed to resend OTP");
     }
@@ -183,7 +179,7 @@ const OtpVerificationScreen = ({ route, navigation }) => {
 
             {/* Resend Section */}
             <View style={styles.resendContainer}>
-              <Text style={styles.resendText}>Didn't receive code? </Text>
+              <Text style={styles.resendText}>{"Didn't receive code? "}</Text>
               {canResend ? (
                 <TouchableOpacity onPress={handleResend} disabled={resendLoading}>
                   {resendLoading ? (

@@ -15,6 +15,7 @@ import {
   Platform,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COLORS, SHADOWS } from "../../constants/theme";
 import adminService from "../../services/adminService";
@@ -781,6 +782,8 @@ const UsersScreen = () => {
 // Styles
 // ---------------------------------------------------------------------------
 const styles = StyleSheet.create({
+  errorBanner: { backgroundColor: '#FDE8E8', padding: 14, borderRadius: 14, gap: 10, marginBottom: 14 },
+  errorText: { color: '#B42332', fontSize: 13 },
   screen: {
     flex: 1,
     backgroundColor: COLORS.background,
@@ -788,6 +791,7 @@ const styles = StyleSheet.create({
 
   // Header
   header: {
+    width: '100%', maxWidth: 760, alignSelf: 'center',
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
@@ -845,6 +849,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
+    width: '100%', maxWidth: 760, alignSelf: 'center',
     paddingHorizontal: 20,
     paddingTop: 18,
     paddingBottom: 24,
