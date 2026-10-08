@@ -477,6 +477,117 @@ const resetPassword = async (req, res) => {
 };
 
 /**
+ * @desc    Update the current customer's or provider's profile
+ * @route   PATCH /api/auth/profile
+ * @access  Private
+ */
+const updateProfile = async (req, res) => {
+  try {
+    if (!["customer", "provider"].includes(req.user.role)) {
+      return res.status(403).json({ message: "Use admin profile settings." });
+    }
+
+    const updates = {};
+
+    if (req.user.role === "provider" && req.body.acceptingRequests !== undefined) {
+      if (typeof req.body.acceptingRequests !== "boolean") {
+        return res.status(400).json({ message: "Invalid request availability." });
+      }
+      updates["providerDetails.acceptingRequests"] = req.body.acceptingRequests;
+    }
+
+    for (const [field, maxLength] of [["name", 120], ["phone", 18]]) {
+      if (req.body[field] === undefined) continue;
+      const value = req.body[field];
+      if (
+        typeof value !== "string" ||
+        !value.trim() ||
+        value.trim().length > maxLength ||
+        (field === "phone" && !/^\+?[\d\s-]{7,18}$/.test(value.trim()))
+      ) {
+        return res.status(400).json({ message: "Enter a valid name and phone number." });
+      }
+      updates[field] = value.trim();
+    }
+
+    if (req.body.location !== undefined) {
+      const location = req.body.location;
+      if (
+        !location ||
+        typeof location !== "object" ||
+        typeof location.address !== "string" ||
+        typeof location.city !== "string" ||
+        location.address.trim().length > 300 ||
+        location.city.trim().length > 120 ||
+        (!location.address.trim() && !location.city.trim())
+      ) {
+        return res.status(400).json({ message: "Enter a street address or city." });
+      }
+
+      const validCoordinate = (value, max) =>
+        value === null ||
+        (typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= max);
+      if (
+        !validCoordinate(location.latitude, 90) ||
+        !validCoordinate(location.longitude, 180) ||
+        (location.latitude === null) !== (location.longitude === null)
+      ) {
+        return res.status(400).json({ message: "Enter valid latitude and longitude together." });
+      }
+
+      updates.location = {
+        address: location.address.trim(),
+        city: location.city.trim(),
+        latitude: location.latitude,
+        longitude: location.longitude,
+      };
+    }
+
+    if (req.user.role === "provider" && req.body.providerDetails !== undefined) {
+      const details = req.body.providerDetails;
+      if (!details || typeof details !== "object") {
+        return res.status(400).json({ message: "Invalid provider profile." });
+      }
+
+      for (const [field, maxLength] of [
+        ["bio", 2000],
+        ["serviceArea", 300],
+        ["experience", 120],
+      ]) {
+        if (
+          typeof details[field] !== "string" ||
+          details[field].trim().length > maxLength
+        ) {
+          return res.status(400).json({ message: "Check your profile details." });
+        }
+        updates[`providerDetails.${field}`] = details[field].trim();
+      }
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      {
+        $set: updates,
+        ...(updates["providerDetails.acceptingRequests"] !== undefined
+          ? { $inc: { "providerDetails.availabilityRevision": 1 } }
+          : {}),
+      },
+      { returnDocument: "after", runValidators: true }
+    );
+
+    return res.status(200).json({ user: sanitizeUser(user) });
+  } catch (error) {
+    console.error("Update Profile Error:", error);
+    return res.status(error.code === 11000 ? 409 : 503).json({
+      message:
+        error.code === 11000
+          ? "This phone number belongs to another account."
+          : "Unable to save your profile. Please try again.",
+    });
+  }
+};
+
+/**
  * @desc    Get Current Logged In User Profile
  * @route   GET /api/auth/me
  * @access  Private

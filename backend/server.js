@@ -30,6 +30,7 @@ const PORT = process.env.PORT || 5000;
 connectDB().then(async () => {
   // Booking writes must not start before the double-booking protection exists.
   await require("./models/Booking").init();
+  await require('./models/Complaint').init();
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });

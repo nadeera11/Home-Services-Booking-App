@@ -33,7 +33,7 @@ test('booking lifecycle, ownership, retries and concurrent slot reservations aga
   try {
     await mongoose.connect(process.env.MONGO_URI, { dbName, serverSelectionTimeoutMS: 10000 });
     const User = require('../models/User'), Booking = require('../models/Booking');
-    await Promise.all([User.init(), Booking.init()]);
+    await Promise.all([User.init(), Booking.init(), require('../models/Complaint').init()]);
     const day = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
     const first = new Date(day + 'T08:00:00+05:30').toISOString();
     const second = new Date(day + 'T10:30:00+05:30').toISOString();
@@ -42,7 +42,7 @@ test('booking lifecycle, ownership, retries and concurrent slot reservations aga
     const [provider, a, b, otherProvider] = await Promise.all([make('Provider', 'provider', '0700000001'), make('Alice', 'customer', '0700000002'), make('Bob', 'customer', '0700000003'), make('OtherProvider', 'provider', '0700000004')]);
     const jwt = require('jsonwebtoken');
     const tokens = new Map([provider, a, b, otherProvider].map(u => [String(u._id), jwt.sign({ id: u._id, role: u.role }, process.env.JWT_SECRET, { expiresIn: '5m' })]));
-    const express = require('express'), app = express(); app.use(express.json()); app.use('/api/auth', require('../routes/authRoutes')); app.use('/api/providers', require('../routes/providerRoutes')); app.use('/api/bookings', require('../routes/bookingRoutes')); app.use('/api/payments', require('../routes/paymentRoutes'));
+    const express = require('express'), app = express(); app.use(express.json()); app.use('/api/auth', require('../routes/authRoutes')); app.use('/api/providers', require('../routes/providerRoutes')); app.use('/api/bookings', require('../routes/bookingRoutes')); app.use('/api/payments', require('../routes/paymentRoutes')); app.use('/api/complaints', require('../routes/complaintRoutes'));
     server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
     const base = `http://127.0.0.1:${server.address().port}/api/bookings`;
     const call = async (user, path = '', method = 'GET', data) => { const res = await fetch(base + path, { method, headers: { 'Content-Type': 'application/json', ...(user ? { Authorization: 'Bearer ' + tokens.get(String(user._id)) } : {}) }, body: data ? JSON.stringify(data) : undefined }); return { status: res.status, body: await res.json() }; };
@@ -119,6 +119,10 @@ test('booking lifecycle, ownership, retries and concurrent slot reservations aga
     assert.equal((await call(owner, '/' + created.id, 'PATCH', { action: 'reschedule', startsAt: third, problem: 'Different scope' })).status, 409);
     const moved = await call(owner, '/' + created.id, 'PATCH', { action: 'reschedule', startsAt: third, notes: 'New notes' });
     assert.equal(moved.body.booking.status, 'pending'); assert.equal(moved.body.booking.location, 'Test Street');
+    // A stale provider screen must not accept a newly rescheduled time.
+    assert.equal((await call(provider, '/' + created.id, 'PATCH', { action: 'confirm', bookingVersion: created.version })).status, 409);
+    assert.equal((await Booking.findById(created.id)).status, 'pending');
+
     assert.equal((await call(owner)).body.bookings.length, 1);
     assert.equal((await call(provider)).body.bookings.length, 2);
     assert.equal((await call(other, '/' + occupied.body.booking.id, 'PATCH', { action: 'cancel' })).body.booking.status, 'cancelled');
@@ -173,6 +177,7 @@ test('booking lifecycle, ownership, retries and concurrent slot reservations aga
     await call(provider, '/' + fid, 'PATCH', { action: 'start' });
     await call(provider, '/' + fid, 'PATCH', { ...quoteInput, items: [{ description: 'Replacement total', amount: 4000 }] });
     assert.equal((await call(provider, '/' + fid, 'PATCH', { action: 'complete' })).status, 409);
+    assert.equal((await call(a)).body.bookings.find(b => b.id === fid).previousApprovedQuote.totalMinor, 250035);
     const declined = await call(a, '/' + fid, 'PATCH', { action: 'decline_quote', quoteVersion: 2 });
     assert.equal(declined.body.booking.status, 'ongoing'); assert.equal(declined.body.booking.quote.totalMinor, 250035);
     const done = await call(provider, '/' + fid, 'PATCH', { action: 'complete', totalMinor: 1 });
@@ -297,6 +302,25 @@ test('booking lifecycle, ownership, retries and concurrent slot reservations aga
     assert.equal((await call(a, '/' + pref.body.booking.id, 'PATCH', { action: 'accept_time', proposalVersion: suggestion.body.booking.proposalVersion })).status, 409);
     assert.equal((await Booking.findById(pref.body.booking.id)).status, 'time_proposed');
     assert.equal((await Booking.findById(pref.body.booking.id)).slotKey, undefined);
+    // Support cases preserve ownership, retry identity, and optimistic concurrency.
+    const admin = await make('SupportAdmin', 'admin', '0700000099');
+    tokens.set(String(admin._id), jwt.sign({ id: admin._id, role: admin.role }, process.env.JWT_SECRET, { expiresIn: '5m' }));
+    const support = async (user, path = '', method = 'GET', data) => { const res = await fetch(base.replace('/bookings', '/complaints') + path, { method, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tokens.get(String(user._id)) }, body: data ? JSON.stringify(data) : undefined }); return { status: res.status, body: await res.json() }; };
+    const issue = { bookingId: created.id, description: 'Please check my payment confirmation.' };
+    assert.equal((await support(provider, '', 'POST', issue)).status, 403);
+    assert.equal((await support(owner === a ? b : a, '', 'POST', issue)).status, 404);
+    assert.equal((await support(owner, '', 'POST', { ...issue, description: ' ' })).status, 400);
+    const reports = await Promise.all([support(owner, '', 'POST', issue), support(owner, '', 'POST', issue)]);
+    assert.equal(reports[0].status, 200); assert.equal(reports[1].status, 200);
+    const report = reports[0].body.complaint;
+    assert.equal(report.id, reports[1].body.complaint.id);
+    assert.equal((await support(owner === a ? b : a)).body.complaints.length, 0);
+    assert.equal((await support(admin)).body.complaints.length, 1);
+    assert.equal((await support(owner, '/' + report.id, 'PATCH', { status: 'Resolved', response: 'Fake', version: report.version })).status, 403);
+    const handled = await support(admin, '/' + report.id, 'PATCH', { status: 'Resolved', response: 'Receipt checked with the provider.', version: report.version });
+    assert.equal(handled.status, 200);
+    assert.equal((await support(admin, '/' + report.id, 'PATCH', { status: 'Under Review', response: '', version: report.version })).status, 409);
+    assert.equal((await support(owner, '?bookingId=' + created.id)).body.complaints[0].status, 'Resolved');
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));
     if (mongoose.connection.readyState === 1 && mongoose.connection.name === dbName && /^fixmate_booking_test_[a-f0-9]{16}$/.test(dbName)) await mongoose.connection.db.dropDatabase();
