@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -7,61 +7,14 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
-  Alert,
+  Modal,
+  ActivityIndicator,
 } from "react-native";
+import { useFocusEffect } from '@react-navigation/native';
+import { complaintService } from '../../services/complaintService';
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COLORS, SHADOWS } from "../../constants/theme";
-
-// ---------------------------------------------------------------------------
-// Placeholder data. Replace with a call to adminService once the backend
-// exposes the complaints endpoint.
-// ---------------------------------------------------------------------------
-const OPEN_TOTAL = 17;
-const HIGH_PRIORITY_TOTAL = 5;
-
-const COMPLAINTS = [
-  {
-    id: "CMP-3321",
-    title: "Incomplete work",
-    booking: "BK-20918",
-    customer: "Thilini Abeysekara",
-    provider: "Lasantha Kumara",
-    priority: "High",
-    status: "Submitted",
-    createdAt: "2026-09-17",
-  },
-  {
-    id: "CMP-3318",
-    title: "Pricing dispute",
-    booking: "BK-20886",
-    customer: "Kasuni Perera",
-    provider: "Nuwan Fernando",
-    priority: "High",
-    status: "Under Review",
-    createdAt: "2026-09-16",
-  },
-  {
-    id: "CMP-3312",
-    title: "Late arrival",
-    booking: "BK-20871",
-    customer: "Dilani Jayawardena",
-    provider: "Chamara Silva",
-    priority: "Medium",
-    status: "Under Review",
-    createdAt: "2026-09-15",
-  },
-  {
-    id: "CMP-3305",
-    title: "Refund request",
-    booking: "BK-20840",
-    customer: "Ruwan Senanayake",
-    provider: "Ishara Perera",
-    priority: "Low",
-    status: "Resolved",
-    createdAt: "2026-09-12",
-  },
-];
 
 const FILTERS = ["All", "Submitted", "Under Review", "Resolved"];
 
@@ -131,13 +84,18 @@ const ComplaintCard = ({ item, onPress }) => {
 // ---------------------------------------------------------------------------
 const ComplaintsScreen = () => {
   const insets = useSafeAreaInsets();
+  const [cases, setCases] = useState([]), [loading, setLoading] = useState(true), [error, setError] = useState(''), [selected, setSelected] = useState(null), [response, setResponse] = useState(''), [busy, setBusy] = useState(false);
+  const lock = useRef(false);
+  const load = useCallback(async signal => { setError(''); setLoading(true); try { const rows = await complaintService.list(undefined, signal); if (!signal?.aborted) setCases(rows); } catch (e) { if (!signal?.aborted) setError(e.response?.data?.message || 'Unable to load support cases.'); } finally { if (!signal?.aborted) setLoading(false); } }, []);
+  useFocusEffect(useCallback(() => { const c = new AbortController(); void load(c.signal); return () => c.abort(); }, [load]));
+  async function update(status) { if (lock.current) return; lock.current = true; setBusy(true); setError(''); try { const item = await complaintService.update(selected.id, { status, response, version: selected.version }); setCases(rows => rows.map(c => c.id === item.id ? item : c)); setSelected(item); } catch (e) { setError(e.response?.data?.message || 'Unable to update case.'); } finally { setBusy(false); lock.current = false; } }
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("All");
   const [priorityFirst, setPriorityFirst] = useState(true);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const list = COMPLAINTS.filter((c) => {
+    const list = cases.filter((c) => {
       const matchesFilter = filter === "All" || c.status === filter;
       const matchesQuery =
         !q ||
@@ -155,12 +113,9 @@ const ComplaintsScreen = () => {
       }
       return b.createdAt.localeCompare(a.createdAt);
     });
-  }, [query, filter, priorityFirst]);
+  }, [cases, query, filter, priorityFirst]);
 
-  const openCase = (item) => {
-    // TODO: navigate to the case details screen once it exists.
-    Alert.alert(item.id, `Details for "${item.title}" are coming soon.`);
-  };
+  const openCase = item => { setSelected(item); setResponse(item.response || ''); setError(''); };
 
   return (
     <View style={styles.screen}>
@@ -171,16 +126,16 @@ const ComplaintsScreen = () => {
         <View style={styles.headerText}>
           <Text style={styles.screenTitle}>Complaints</Text>
           <Text style={styles.subtitle}>
-            {OPEN_TOTAL} open · {HIGH_PRIORITY_TOTAL} marked high priority
+            {cases.filter(c => c.status !== 'Resolved').length} open · {cases.length} total
           </Text>
         </View>
         <TouchableOpacity
           style={styles.menuButton}
-          onPress={() => Alert.alert("More options", "Coming soon.")}
+          onPress={() => load()}
           accessibilityRole="button"
-          accessibilityLabel="More options"
+          accessibilityLabel="Refresh support cases"
         >
-          <MaterialCommunityIcons name="dots-horizontal" size={22} color={COLORS.textPrimary} />
+          <MaterialCommunityIcons name="refresh" size={22} color={COLORS.textPrimary} />
         </TouchableOpacity>
       </View>
 
@@ -191,6 +146,7 @@ const ComplaintsScreen = () => {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
+        {loading && <ActivityIndicator color={COLORS.primary} />}{!!error && <Text accessibilityRole="alert" style={styles.subtitle}>{error}</Text>}
         {/* Search */}
         <View style={styles.search}>
           <MaterialCommunityIcons name="magnify" size={20} color={COLORS.textMuted} />
@@ -240,9 +196,9 @@ const ComplaintsScreen = () => {
           </ScrollView>
           <TouchableOpacity
             style={styles.filterButton}
-            onPress={() => Alert.alert("Filters", "More filters are coming soon.")}
+            onPress={() => { setFilter("All"); setQuery(""); }}
             accessibilityRole="button"
-            accessibilityLabel="More filters"
+            accessibilityLabel="Clear filters"
           >
             <MaterialCommunityIcons name="filter-variant" size={20} color={COLORS.textPrimary} />
           </TouchableOpacity>
@@ -263,7 +219,7 @@ const ComplaintsScreen = () => {
         </View>
 
         {/* List */}
-        {results.length > 0 ? (
+        {loading ? null : results.length > 0 ? (
           results.map((item) => <ComplaintCard key={item.id} item={item} onPress={openCase} />)
         ) : (
           <View style={styles.empty}>
@@ -272,6 +228,7 @@ const ComplaintsScreen = () => {
           </View>
         )}
       </ScrollView>
+      {!!selected && <Modal visible animationType="slide" onRequestClose={() => { if (!busy) setSelected(null); }}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, paddingTop: insets.top + 20, gap: 16 }}><Text style={styles.screenTitle}>Support case</Text><Text style={styles.title}>{selected.booking} · {selected.status}</Text><Text style={styles.party}>{selected.customer} · {selected.provider}</Text><Text style={styles.party}>{selected.description}</Text><Text style={styles.title}>Response to customer</Text><TextInput accessibilityLabel="Response to customer" multiline maxLength={2000} value={response} onChangeText={setResponse} style={[styles.search, { minHeight: 120, padding: 16 }]} /><Text style={styles.subtitle}>A case response does not change charges, payments or booking status.</Text>{!!error && <Text accessibilityRole="alert">{error}</Text>}{['Under Review', 'Resolved'].map(status => <TouchableOpacity key={status} accessibilityRole="button" disabled={busy || (status === 'Resolved' && !response.trim())} onPress={() => update(status)} style={styles.action}><Text style={styles.actionText}>{busy ? 'Saving…' : 'Mark ' + status}</Text></TouchableOpacity>)}<TouchableOpacity accessibilityRole="button" disabled={busy} style={styles.action} onPress={() => { setSelected(null); void load(); }}><Text style={styles.actionText}>Back to complaints</Text></TouchableOpacity></ScrollView></Modal>}
     </View>
   );
 };

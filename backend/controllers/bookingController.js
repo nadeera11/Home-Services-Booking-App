@@ -25,7 +25,7 @@ function validSlot(value, now = Date.now()) {
   return Number.isFinite(stamp) && date.toISOString().replace('.000Z', 'Z') === value.replace('.000Z', 'Z') && stamp > now && stamp < now + 90 * 86400000 && TIMES.includes(new Date(stamp + 19800000).toISOString().slice(11, 16));
 }
 function dto(b) {
-  return { lastMessage: b.messages?.length ? b.messages[b.messages.length - 1] : null, id: String(b._id), reference: `FM-${new Date(b.createdAt).getUTCFullYear()}-${String(b._id).toUpperCase()}`, providerId: String(b.provider), providerName: b.providerName, customerName: b.customerName, service: b.service, startsAt: b.startsAt, scheduleMode: b.scheduleMode || "published", windowEnd: b.windowEnd, scheduleConfirmed: b.scheduleConfirmed, proposedStartsAt: b.proposedStartsAt, proposalVersion: b.proposalVersion, durationMinutes: b.durationMinutes ?? 60, bufferMinutes: b.bufferMinutes ?? 30, problem: b.problem, location: b.location, notes: b.notes, price: b.price, priceUnit: b.priceUnit, pricing: b.pricing, quote: b.quote, invoice: b.invoice, payment: b.payment, inspectionPerformed: b.inspectionPerformed, history: b.history || [], updatedAt: b.updatedAt, status: b.status, createdAt: b.createdAt };
+  return { version: b.__v, lastMessage: b.messages?.length ? b.messages[b.messages.length - 1] : null, id: String(b._id), reference: `FM-${new Date(b.createdAt).getUTCFullYear()}-${String(b._id).toUpperCase()}`, providerId: String(b.provider), providerName: b.providerName, customerName: b.customerName, service: b.service, startsAt: b.startsAt, scheduleMode: b.scheduleMode || "published", windowEnd: b.windowEnd, scheduleConfirmed: b.scheduleConfirmed, proposedStartsAt: b.proposedStartsAt, proposalVersion: b.proposalVersion, durationMinutes: b.durationMinutes ?? 60, bufferMinutes: b.bufferMinutes ?? 30, problem: b.problem, location: b.location, notes: b.notes, price: b.price, priceUnit: b.priceUnit, pricing: b.pricing, quote: b.quote, previousApprovedQuote: [...(b.quoteHistory || [])].reverse().find(q => q?.status === 'accepted') || null, invoice: b.invoice, payment: b.payment, inspectionPerformed: b.inspectionPerformed, history: b.history || [], updatedAt: b.updatedAt, status: b.status, createdAt: b.createdAt };
 }
 function createBookingController(Booking, User) {
   const providerFields = 'name providerDetails.acceptingRequests providerDetails.category providerDetails.price providerDetails.priceUnit providerDetails.pricing providerDetails.bookingSlots providerDetails.appointmentDurationMinutes providerDetails.travelBufferMinutes providerDetails.serviceArea providerDetails.latitude providerDetails.longitude providerDetails.rating providerDetails.reviewCount';
@@ -131,6 +131,11 @@ function createBookingController(Booking, User) {
       const booking = await Booking.findOne({ _id: req.params.id, ...owner });
       if (!booking) return res.status(404).json({ message: 'Booking not found.' });
       const { action, startsAt } = req.body || {};
+      // Reject decisions made against an older screen, even if the new state
+      // happens to permit the same action (for example, a rescheduled request).
+      if (req.body?.bookingVersion !== undefined && req.body.bookingVersion !== booking.__v) {
+        return res.status(409).json({ message: 'This booking changed. Refresh and review it before trying again.' });
+      }
       let nextStatus, update, reservationStart, mustPublish = false;
       const fail = message => res.status(409).json({ message });
       if (isProvider && action === 'confirm' && ['confirmed', 'awaiting_quote', 'inspection_confirmed'].includes(booking.status)) return res.json({ booking: dto(booking) });
