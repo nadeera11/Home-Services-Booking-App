@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StatusBar, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { Image } from "expo-image";
+import { Ionicons } from "@expo/vector-icons";
 import { bookingPrice } from '../../services/bookingService';
 import ProviderProfileModal from "./ProviderProfileModal";
 import * as Location from "expo-location";
@@ -10,81 +11,174 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COLORS } from "../../constants/theme";
 import { getProvider, getProviders } from "../../services/providerService";
 import { availabilityLabel, CATEGORIES, EMPTY_FILTERS, filterProviders, SORT_OPTIONS } from "../../utils/exploreProviders";
-const ICONS = {
-  search: require("../../../assets/images/explore/imgSvg.svg"),
-  filter: require("../../../assets/images/explore/imgSvg1.svg"),
-  verified: require("../../../assets/images/explore/imgSvg2.svg"),
-  star: require("../../../assets/images/explore/imgSvg3.svg"),
-  location: require("../../../assets/images/explore/imgSvg4.svg"),
-  clock: require("../../../assets/images/explore/imgSvg5.svg"),
-  chevron: require("../../../assets/images/explore/imgSvg6.svg")
+
+const PROVIDER_PHOTOS = {
+  'Arjun perera': require('../../../assets/images/Home/Arjun perera.jpg'),
+  'Sanduni rathnayake': require('../../../assets/images/Home/Sanduni rathnayake.jpg'),
+  'Cleaning': require('../../../assets/images/Home/full home deep clean.jpg'),
+  'Painting': require('../../../assets/images/Home/Single room painting.jpg'),
+  'Plumbing': require('../../../assets/images/Home/Leaking tap repair.jpg'),
+  'Electrical': require('../../../assets/images/Home/Appliance repair.jpg'),
+  'Gardening': require('../../../assets/images/Home/full home deep clean.jpg'),
+  'Appliance Repair': require('../../../assets/images/Home/Ceiling fan repair.jpg'),
 };
-const Icon = ({
-  name,
-  size = 14
-}) => <Image source={ICONS[name]} style={{
-  width: size,
-  height: size
-}} contentFit="contain" accessible={false} />;
-const initials = name => name.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase();
+
+const CATEGORY_ICONS = {
+  'All': 'grid-outline',
+  'Plumbing': 'water-outline',
+  'Electrical': 'flash-outline',
+  'Cleaning': 'sparkles-outline',
+  'Painting': 'color-palette-outline',
+  'Gardening': 'leaf-outline',
+  'Appliance Repair': 'construct-outline',
+};
+
+const initials = name => (name || '').trim().split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase();
 const priceText = bookingPrice;
-function ProviderCard({
-  provider: p,
-  onPress
-}) {
-  return <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`View ${p.name}'s profile`} style={({
-    pressed
-  }) => [styles.card, pressed && styles.pressed]}>
-    <View style={styles.avatarSlot}><View style={styles.avatar}><Text style={styles.initials}>{initials(p.name)}</Text></View>{p.verified && <View style={styles.verified}><Icon name="verified" size={21.59} /></View>}</View>
-    <View style={styles.cardBody}>
-      <View style={styles.rowBetween}><Text style={styles.providerName} numberOfLines={2}>{p.name}</Text><View style={styles.rating}><Icon name="star" /><Text style={styles.ratingText}>{p.rating == null ? "New" : p.rating.toFixed(1)}</Text>{p.reviewCount > 0 && <Text style={styles.smallMuted}>({p.reviewCount})</Text>}</View></View>
-      <Text style={styles.categoryText}>{p.category}</Text>
-      <View style={styles.metadata}><View style={styles.metaItem}><Icon name="location" /><Text style={styles.smallMuted}>{p.distance != null ? `${p.distance.toFixed(1)} km away` : p.serviceArea || "Location not listed"}</Text></View><View style={styles.metaItem}><Icon name="clock" /><Text style={styles.smallMuted}>{availabilityLabel(p.nextAvailableAt)}</Text></View></View>
-      <View style={styles.cardFooter}><Text style={styles.price}>{priceText(p)}</Text><View style={styles.profileLink}><Text style={styles.link}>View profile</Text><Icon name="chevron" /></View></View>
-    </View>
-  </Pressable>;
+
+function getProviderPhoto(p) {
+  if (p.avatar) return { uri: p.avatar };
+  if (p.name && PROVIDER_PHOTOS[p.name]) return PROVIDER_PHOTOS[p.name];
+  if (p.category && PROVIDER_PHOTOS[p.category]) return PROVIDER_PHOTOS[p.category];
+  return null;
 }
-function Sheet({
-  visible,
-  title,
-  onClose,
-  children
-}) {
+
+function ProviderCard({ provider: p, onPress }) {
+  const photo = getProviderPhoto(p);
+  const nextTime = availabilityLabel(p.nextAvailableAt);
+  const isAvailableToday = nextTime.startsWith("Today");
+
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`View ${p.name}'s profile`}
+      style={({ pressed }) => [
+        styles.card,
+        pressed && styles.cardPressed
+      ]}
+    >
+      {/* Image Thumbnail */}
+      <View style={styles.photoContainer}>
+        {photo ? (
+          <Image source={photo} style={styles.providerPhoto} contentFit="cover" />
+        ) : (
+          <View style={styles.photoFallback}>
+            <Text style={styles.photoInitials}>{initials(p.name)}</Text>
+          </View>
+        )}
+        {p.verified && (
+          <View style={styles.verifiedBadge}>
+            <Ionicons name="checkmark-circle" size={18} color="#7F56D9" />
+          </View>
+        )}
+      </View>
+
+      {/* Card Info Content */}
+      <View style={styles.cardBody}>
+        {/* Name & Rating */}
+        <View style={styles.rowBetween}>
+          <Text style={styles.providerName} numberOfLines={1}>{p.name}</Text>
+          <View style={styles.ratingBadge}>
+            <Ionicons name="star" size={12} color="#F59E0B" />
+            <Text style={styles.ratingText}>{p.rating == null ? "New" : p.rating.toFixed(1)}</Text>
+            {p.reviewCount > 0 && <Text style={styles.reviewCountText}>({p.reviewCount})</Text>}
+          </View>
+        </View>
+
+        {/* Category Tag */}
+        <View style={styles.categoryBadgeRow}>
+          <View style={styles.categoryBadge}>
+            <Text style={styles.categoryBadgeText}>{p.category}</Text>
+          </View>
+          {isAvailableToday && (
+            <View style={styles.todayBadge}>
+              <Text style={styles.todayBadgeText}>⚡ Available Today</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Metadata: Location & Availability */}
+        <View style={styles.metaRow}>
+          <View style={styles.metaItem}>
+            <Ionicons name="location-outline" size={13} color="#6E6E76" />
+            <Text style={styles.metaText} numberOfLines={1}>
+              {p.distance != null ? `${p.distance.toFixed(1)} km away` : p.serviceArea || "Location not listed"}
+            </Text>
+          </View>
+          <View style={styles.metaItem}>
+            <Ionicons name="time-outline" size={13} color="#6E6E76" />
+            <Text style={styles.metaText} numberOfLines={1}>{nextTime}</Text>
+          </View>
+        </View>
+
+        {/* Card Footer: Price & View Profile Link */}
+        <View style={styles.cardFooter}>
+          <Text style={styles.priceAmount}>{priceText(p)}</Text>
+          <View style={styles.profileBtn}>
+            <Text style={styles.profileBtnText}>View details</Text>
+            <Ionicons name="chevron-forward" size={14} color="#7F56D9" />
+          </View>
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+function Sheet({ visible, title, onClose, children }) {
   const insets = useSafeAreaInsets();
-  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}><KeyboardAvoidingView style={styles.modal} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-    <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close dialog" accessibilityRole="button" />
-    <View style={[styles.sheet, {
-        paddingBottom: Math.max(24, insets.bottom),
-        maxHeight: "90%"
-      }]} accessibilityViewIsModal><View style={styles.sheetHeader}><Text accessibilityRole="header" style={styles.sheetTitle}>{title}</Text><Pressable accessibilityRole="button" accessibilityLabel="Close dialog" onPress={onClose} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable></View>{children}</View>
-  </KeyboardAvoidingView></Modal>;
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView style={styles.modal} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close dialog" accessibilityRole="button" />
+        <View
+          style={[styles.sheet, { paddingBottom: Math.max(24, insets.bottom), maxHeight: "90%" }]}
+          accessibilityViewIsModal
+        >
+          <View style={styles.sheetHeader}>
+            <Text accessibilityRole="header" style={styles.sheetTitle}>{title}</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Close dialog" onPress={onClose} style={styles.close}>
+              <Ionicons name="close" size={24} color="#6E6E76" />
+            </Pressable>
+          </View>
+          {children}
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
 }
+
 export default function ExploreScreen({ navigation, route }) {
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
-  const [providers, setProviders] = useState([]),
-    [loading, setLoading] = useState(true),
-    [refreshing, setRefreshing] = useState(false),
-    [error, setError] = useState("");
-  const [query, setQuery] = useState(""),
-    [category, setCategory] = useState(route?.params?.category || "All"),
-    [filters, setFilters] = useState(EMPTY_FILTERS),
-    [draft, setDraft] = useState(EMPTY_FILTERS),
-    [filterError, setFilterError] = useState("");
-  const [sheet, setSheet] = useState(null),
-    [sort, setSort] = useState("name"),
-    [location, setLocation] = useState(user?.location?.latitude != null ? user.location : null),
-    [locating, setLocating] = useState(false),
-    [locationError, setLocationError] = useState("");
-  const [profile, setProfile] = useState(null),
-    [profileId, setProfileId] = useState(null),
-    [profileLoading, setProfileLoading] = useState(false),
-    [profileError, setProfileError] = useState("");
+  const [providers, setProviders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
+
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState(route?.params?.category || "All");
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [draft, setDraft] = useState(EMPTY_FILTERS);
+  const [filterError, setFilterError] = useState("");
+  const [sheet, setSheet] = useState(null);
+  const [sort, setSort] = useState("name");
+  const [location, setLocation] = useState(user?.location?.latitude != null ? user.location : null);
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState("");
+
+  const [profile, setProfile] = useState(null);
+  const [profileId, setProfileId] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState("");
+
   useFocusEffect(useCallback(() => { if (route?.params?.category) setCategory(route.params.category); }, [route]));
   useFocusEffect(useCallback(() => { if (user?.location?.latitude != null) setLocation(user.location); }, [user]));
-  const listRequest = useRef(null),
-    profileRequest = useRef(null),
-    mounted = useRef(false);
+
+  const listRequest = useRef(null);
+  const profileRequest = useRef(null);
+  const mounted = useRef(false);
+
   const load = useCallback(() => {
     listRequest.current?.abort();
     const controller = new AbortController();
@@ -103,6 +197,7 @@ export default function ExploreScreen({ navigation, route }) {
       }
     });
   }, []);
+
   useEffect(() => {
     mounted.current = true;
     void load();
@@ -112,7 +207,12 @@ export default function ExploreScreen({ navigation, route }) {
       profileRequest.current?.abort();
     };
   }, [load]);
-  const categories = useMemo(() => [...CATEGORIES, ...providers.map(p => p.category).filter((c, i, all) => !CATEGORIES.some(base => base.toLowerCase() === c.toLowerCase()) && all.indexOf(c) === i)], [providers]);
+
+  const categories = useMemo(() => [
+    ...CATEGORIES,
+    ...providers.map(p => p.category).filter((c, i, all) => !CATEGORIES.some(base => base.toLowerCase() === c.toLowerCase()) && all.indexOf(c) === i)
+  ], [providers]);
+
   const results = useMemo(() => filterProviders(providers, {
     query,
     category,
@@ -120,21 +220,27 @@ export default function ExploreScreen({ navigation, route }) {
     sort,
     location
   }), [providers, query, category, filters, sort, location]);
+
   const filterCount = Number(filters.maxPrice !== "") + Number(filters.minRating > 0) + Number(filters.availableToday) + Number(!!filters.area.trim());
+
   const refresh = () => {
     setRefreshing(true);
     setError("");
     void load();
   };
+
   const reset = () => {
     setQuery("");
     setCategory("All");
     setFilters(EMPTY_FILTERS);
+    setSort("name");
   };
+
   const close = () => {
     profileRequest.current?.abort();
     setSheet(null);
   };
+
   async function openProfile(id) {
     profileRequest.current?.abort();
     const controller = new AbortController();
@@ -153,6 +259,7 @@ export default function ExploreScreen({ navigation, route }) {
       if (!controller.signal.aborted) setProfileLoading(false);
     }
   }
+
   async function chooseSort(value) {
     if (value !== "nearest" || location) {
       setSort(value);
@@ -182,6 +289,7 @@ export default function ExploreScreen({ navigation, route }) {
       if (mounted.current) setLocating(false);
     }
   }
+
   function applyFilters() {
     const amount = draft.maxPrice.trim();
     if (amount !== "" && (!/^\d+(\.\d{1,2})?$/.test(amount) || !Number.isFinite(Number(amount)))) {
@@ -194,104 +302,333 @@ export default function ExploreScreen({ navigation, route }) {
     });
     setSheet(null);
   }
-  return <View style={styles.screen}>
-    <StatusBar barStyle="dark-content" backgroundColor={COLORS.secondary} />
-    <View style={[styles.header, {
-      paddingTop: insets.top + 8
-    }]}>
-      <Text style={styles.title}>Explore services</Text><Text style={styles.subtitle}>{loading ? "Find verified professionals for your home" : `${providers.length.toLocaleString()} verified professional${providers.length === 1 ? "" : "s"}${location ? " • location enabled" : " to explore"}`}</Text>
-      <View style={styles.searchRow}><View style={styles.searchBox}><Icon name="search" size={16} /><TextInput value={query} onChangeText={setQuery} placeholder="Search service or provider name" placeholderTextColor="#9CA3AF" accessibilityLabel="Search service or provider name" style={styles.searchInput} returnKeyType="search" autoCorrect={false} />{query !== "" && <Pressable onPress={() => setQuery("")} accessibilityLabel="Clear search" accessibilityRole="button" hitSlop={10}><Text style={styles.clear}>×</Text></Pressable>}</View><Pressable onPress={() => {
-          setDraft({
-            ...filters
-          });
-          setFilterError("");
-          setSheet("filters");
-        }} accessibilityRole="button" accessibilityLabel={`Filters, ${filterCount} active`} style={styles.filterButton}><Icon name="filter" size={18} />{filterCount > 0 && <View style={styles.filterBadge}><Text style={styles.filterBadgeText}>{filterCount}</Text></View>}</Pressable></View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categories} keyboardShouldPersistTaps="handled">{categories.map(c => <Pressable key={c} onPress={() => setCategory(c)} accessibilityRole="button" accessibilityState={{
-          selected: category === c
-        }} style={[styles.chip, category === c && styles.activeChip]}><Text style={[styles.chipText, category === c && styles.activeChipText]}>{c}</Text></Pressable>)}</ScrollView>
+
+  return (
+    <View style={styles.screen}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FAFAFD" />
+
+      {/* Modern Fixed Header */}
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.titleGroup}>
+          <Text style={styles.title}>Explore Services</Text>
+          <Text style={styles.subtitle}>
+            {loading ? "Finding verified professionals..." : `${results.length} verified professional${results.length === 1 ? "" : "s"} available`}
+          </Text>
+        </View>
+
+        {/* Real-time Search Bar Row */}
+        <View style={styles.searchRow}>
+          <View style={styles.searchBox}>
+            <Ionicons name="search-outline" size={18} color="#7F56D9" />
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search services or providers..."
+              placeholderTextColor="#98A2B3"
+              accessibilityLabel="Search service or provider name"
+              style={styles.searchInput}
+              returnKeyType="search"
+              autoCorrect={false}
+            />
+            {query !== "" && (
+              <Pressable onPress={() => setQuery("")} accessibilityLabel="Clear search" accessibilityRole="button" hitSlop={10}>
+                <Ionicons name="close-circle" size={18} color="#98A2B3" />
+              </Pressable>
+            )}
+          </View>
+
+          {/* Filter Button */}
+          <Pressable
+            onPress={() => {
+              setDraft({ ...filters });
+              setFilterError("");
+              setSheet("filters");
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`Filters, ${filterCount} active`}
+            style={({ pressed }) => [
+              styles.filterButton,
+              filterCount > 0 && styles.filterButtonActive,
+              pressed && styles.pressed
+            ]}
+          >
+            <Ionicons name="options-outline" size={20} color={filterCount > 0 ? "#FFFFFF" : "#7F56D9"} />
+            {filterCount > 0 && (
+              <View style={styles.filterBadge}>
+                <Text style={styles.filterBadgeText}>{filterCount}</Text>
+              </View>
+            )}
+          </Pressable>
+        </View>
+
+        {/* Interactive Category Chips */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoriesContainer}
+          keyboardShouldPersistTaps="handled"
+        >
+          {categories.map(c => {
+            const isSelected = category === c;
+            const iconName = CATEGORY_ICONS[c] || 'build-outline';
+            return (
+              <Pressable
+                key={c}
+                onPress={() => setCategory(c)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isSelected }}
+                style={({ pressed }) => [
+                  styles.categoryChip,
+                  isSelected && styles.activeCategoryChip,
+                  pressed && styles.pressed
+                ]}
+              >
+                <Ionicons
+                  name={iconName}
+                  size={15}
+                  color={isSelected ? "#FFFFFF" : "#7F56D9"}
+                />
+                <Text style={[styles.categoryChipText, isSelected && styles.activeCategoryChipText]}>{c}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        {/* Quick Filter & Sort Toolbar */}
+        <View style={styles.quickFilterBar}>
+          <Pressable
+            onPress={() => {
+              setLocationError("");
+              setSheet("sort");
+            }}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.quickFilterPill, pressed && styles.pressed]}
+          >
+            <Ionicons name="swap-vertical" size={14} color="#7F56D9" />
+            <Text style={styles.quickFilterText}>Sort: {SORT_OPTIONS[sort]}</Text>
+            <Ionicons name="chevron-down" size={12} color="#7F56D9" />
+          </Pressable>
+
+          <Pressable
+            onPress={() => setFilters(f => ({ ...f, availableToday: !f.availableToday }))}
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              styles.quickFilterPill,
+              filters.availableToday && styles.quickFilterPillActive,
+              pressed && styles.pressed
+            ]}
+          >
+            <Text style={[styles.quickFilterText, filters.availableToday && styles.quickFilterTextActive]}>
+              ⚡ Available Today
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => setFilters(f => ({ ...f, minRating: f.minRating === 4.5 ? 0 : 4.5 }))}
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              styles.quickFilterPill,
+              filters.minRating === 4.5 && styles.quickFilterPillActive,
+              pressed && styles.pressed
+            ]}
+          >
+            <Text style={[styles.quickFilterText, filters.minRating === 4.5 && styles.quickFilterTextActive]}>
+              ⭐ 4.5+ Rating
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+
+      {/* Error Banner */}
+      {error !== "" && (
+        <View accessibilityRole="alert" style={styles.errorBanner}>
+          <Text style={styles.errorText}>{error}</Text>
+          <Pressable onPress={refresh} accessibilityRole="button" style={styles.sortButton}>
+            <Text style={styles.link}>Retry</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {sort === "nearest" && <Text style={styles.distanceNote}>Providers without a listed location appear last.</Text>}
+
+      {/* Services List */}
+      {loading ? (
+        <View style={styles.emptyContainer}>
+          <ActivityIndicator size="large" color="#7F56D9" />
+          <Text style={styles.emptySubtitle}>Loading verified providers...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={results}
+          keyExtractor={p => p.id}
+          renderItem={({ item }) => <ProviderCard provider={item} onPress={() => openProfile(item.id)} />}
+          contentContainerStyle={styles.listContent}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} colors={["#7F56D9"]} />}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Ionicons name="search-outline" size={48} color="#A09CAB" style={{ marginBottom: 8 }} />
+              <Text style={styles.emptyTitle}>{error ? "Providers unavailable" : "No services found"}</Text>
+              <Text style={styles.emptySubtitle}>
+                {error
+                  ? "Try again when your connection is restored."
+                  : providers.length
+                  ? "Try searching another service or clear active filters."
+                  : "Verified providers will appear here as they join."}
+              </Text>
+              {providers.length > 0 && (
+                <Pressable style={styles.resetBtn} onPress={reset} accessibilityRole="button">
+                  <Text style={styles.resetBtnText}>Clear search and filters</Text>
+                </Pressable>
+              )}
+            </View>
+          }
+        />
+      )}
+
+      {/* Filter Sheet Modal */}
+      <Sheet visible={sheet === "filters"} title="Filter Services" onClose={close}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.sheetContent}>
+          <Text style={styles.label}>Service Area / Location</Text>
+          <TextInput
+            value={draft.area}
+            onChangeText={area => setDraft(d => ({ ...d, area }))}
+            placeholder="e.g. Colombo, Kandy"
+            accessibilityLabel="Service area"
+            style={styles.input}
+          />
+
+          <Text style={styles.label}>Maximum Price (LKR)</Text>
+          <TextInput
+            value={draft.maxPrice}
+            onChangeText={maxPrice => setDraft(d => ({ ...d, maxPrice }))}
+            placeholder="No maximum"
+            accessibilityLabel="Maximum price in LKR"
+            keyboardType="decimal-pad"
+            style={styles.input}
+          />
+
+          <Text style={styles.label}>Minimum Rating</Text>
+          <View style={styles.optionRow}>
+            {[0, 4, 4.5].map(r => (
+              <Pressable
+                key={r}
+                accessibilityRole="button"
+                accessibilityState={{ selected: draft.minRating === r }}
+                onPress={() => setDraft(d => ({ ...d, minRating: r }))}
+                style={[styles.chip, draft.minRating === r && styles.activeChip]}
+              >
+                <Text style={[styles.chipText, draft.minRating === r && styles.activeChipText]}>
+                  {r ? `⭐ ${r}+ stars` : "Any rating"}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <View style={styles.toggleRow}>
+            <Text style={styles.label}>Available Today</Text>
+            <Switch
+              accessibilityLabel="Available today"
+              value={draft.availableToday}
+              onValueChange={availableToday => setDraft(d => ({ ...d, availableToday }))}
+              trackColor={{ true: "#7F56D9" }}
+            />
+          </View>
+
+          {filterError !== "" && <Text accessibilityRole="alert" style={styles.errorText}>{filterError}</Text>}
+
+          <Pressable onPress={applyFilters} style={styles.primaryButton} accessibilityRole="button">
+            <Text style={styles.primaryText}>Apply Filters</Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => {
+              setDraft({ ...EMPTY_FILTERS });
+              setFilterError("");
+            }}
+            style={styles.secondaryButton}
+            accessibilityRole="button"
+          >
+            <Text style={styles.link}>Reset Filters</Text>
+          </Pressable>
+        </ScrollView>
+      </Sheet>
+
+      {/* Sort Sheet Modal */}
+      <Sheet visible={sheet === "sort"} title="Sort Providers" onClose={close}>
+        {Object.entries(SORT_OPTIONS).map(([value, label]) => (
+          <Pressable
+            key={value}
+            accessibilityRole="radio"
+            accessibilityState={{ checked: sort === value, disabled: locating }}
+            disabled={locating}
+            onPress={() => chooseSort(value)}
+            style={styles.sortOption}
+          >
+            <Text style={styles.optionText}>{label}</Text>
+            <Ionicons
+              name={sort === value ? "checkmark-circle" : "ellipse-outline"}
+              size={22}
+              color={sort === value ? "#7F56D9" : "#98A2B3"}
+            />
+          </Pressable>
+        ))}
+        {locating && <ActivityIndicator color="#7F56D9" style={{ marginVertical: 10 }} />}
+        {locationError !== "" && <Text accessibilityRole="alert" style={styles.errorText}>{locationError}</Text>}
+      </Sheet>
+
+      {/* Provider Details Profile Modal */}
+      <ProviderProfileModal
+        visible={sheet === "profile"}
+        provider={profile}
+        loading={profileLoading}
+        error={profileError}
+        onClose={close}
+        onRetry={() => openProfile(profileId)}
+        onTrackBookings={() => navigation.navigate("Bookings")}
+      />
     </View>
-    <View style={styles.resultsHeader}><Text style={styles.resultsCount}>{loading ? "Finding providers…" : `${results.length} provider${results.length === 1 ? "" : "s"} found`}</Text><Pressable onPress={() => {
-        setLocationError("");
-        setSheet("sort");
-      }} accessibilityRole="button" style={styles.sortButton}><Text style={styles.link}>Sort: {SORT_OPTIONS[sort]}</Text></Pressable></View>
-    {error !== "" && <View accessibilityRole="alert" style={styles.errorBanner}><Text style={styles.errorText}>{error}</Text><Pressable onPress={refresh} accessibilityRole="button" style={styles.sortButton}><Text style={styles.link}>Retry</Text></Pressable></View>}
-    {sort === "nearest" && <Text style={styles.distanceNote}>Providers without a listed location appear last.</Text>}
-    {loading ? <View style={styles.empty}><ActivityIndicator size="large" color={COLORS.primary} /><Text style={styles.subtitle}>Loading verified providers…</Text></View> : <FlatList data={results} keyExtractor={p => p.id} renderItem={({
-      item
-    }) => <ProviderCard provider={item} onPress={() => openProfile(item.id)} />} contentContainerStyle={styles.list} refreshing={refreshing} onRefresh={refresh} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} ListEmptyComponent={<View style={styles.empty}><Text style={styles.emptyTitle}>{error ? "Providers unavailable" : "No providers found"}</Text><Text style={styles.emptyDescription}>{error ? "Try again when your connection is restored." : providers.length ? "Try a different search or adjust your filters." : "Verified, approved providers will appear here as they join."}</Text>{providers.length > 0 && <Pressable style={styles.primaryButton} onPress={reset} accessibilityRole="button"><Text style={styles.primaryText}>Clear search and filters</Text></Pressable>}</View>} />}
-    <Sheet visible={sheet === "filters"} title="Filter services" onClose={close}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.sheetContent}>
-      <Text style={styles.label}>Service area</Text><TextInput value={draft.area} onChangeText={area => setDraft(d => ({
-          ...d,
-          area
-        }))} placeholder="Town or city" accessibilityLabel="Service area" style={styles.input} />
-      <Text style={styles.label}>Maximum service price (LKR; estimates use upper limit)</Text><TextInput value={draft.maxPrice} onChangeText={maxPrice => setDraft(d => ({
-          ...d,
-          maxPrice
-        }))} placeholder="No maximum" accessibilityLabel="Maximum price in LKR" keyboardType="decimal-pad" style={styles.input} />
-      <Text style={styles.label}>Minimum rating</Text><View style={styles.optionRow}>{[0, 4, 4.5].map(r => <Pressable key={r} accessibilityRole="button" accessibilityState={{
-            selected: draft.minRating === r
-          }} onPress={() => setDraft(d => ({
-            ...d,
-            minRating: r
-          }))} style={[styles.chip, draft.minRating === r && styles.activeChip]}><Text style={[styles.chipText, draft.minRating === r && styles.activeChipText]}>{r ? `${r}+ stars` : "Any rating"}</Text></Pressable>)}</View>
-      <View style={styles.toggleRow}><Text style={styles.label}>Available today</Text><Switch accessibilityLabel="Available today" value={draft.availableToday} onValueChange={availableToday => setDraft(d => ({
-            ...d,
-            availableToday
-          }))} trackColor={{
-            true: COLORS.primary
-          }} /></View>
-      {filterError !== "" && <Text accessibilityRole="alert" style={styles.errorText}>{filterError}</Text>}<Pressable onPress={applyFilters} style={styles.primaryButton} accessibilityRole="button"><Text style={styles.primaryText}>Show results</Text></Pressable><Pressable onPress={() => {
-          setDraft({
-            ...EMPTY_FILTERS
-          });
-          setFilterError("");
-        }} style={styles.secondaryButton} accessibilityRole="button"><Text style={styles.link}>Reset filters</Text></Pressable>
-    </ScrollView></Sheet>
-    <Sheet visible={sheet === "sort"} title="Sort providers" onClose={close}>{Object.entries(SORT_OPTIONS).map(([value, label]) => <Pressable key={value} accessibilityRole="radio" accessibilityState={{
-        checked: sort === value,
-        disabled: locating
-      }} disabled={locating} onPress={() => chooseSort(value)} style={styles.sortOption}><Text style={styles.optionText}>{label}</Text><Text style={styles.link}>{sort === value ? "●" : "○"}</Text></Pressable>)}{locating && <ActivityIndicator color={COLORS.primary} />}{locationError !== "" && <Text accessibilityRole="alert" style={styles.errorText}>{locationError}</Text>}</Sheet>
-    <ProviderProfileModal visible={sheet === "profile"} provider={profile} loading={profileLoading} error={profileError} onClose={close} onRetry={() => openProfile(profileId)} onTrackBookings={() => navigation.navigate("Bookings")} />
-  </View>;
+  );
 }
+
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F6F6F9"
+    backgroundColor: "#FAFAFD"
   },
   header: {
-    backgroundColor: COLORS.secondary,
+    backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
-    borderBottomColor: "#ECECF1"
+    borderBottomColor: "#F0EFF5"
+  },
+  titleGroup: {
+    marginHorizontal: 20
   },
   title: {
-    fontSize: 19,
-    lineHeight: 24,
-    fontWeight: "700",
-    color: COLORS.textPrimary,
-    letterSpacing: -0.19,
-    marginHorizontal: 20
+    fontSize: 24,
+    fontWeight: "800",
+    color: "#1D1B20",
+    letterSpacing: -0.3
   },
   subtitle: {
-    fontSize: 12,
-    lineHeight: 18,
+    fontSize: 13,
     color: "#6E6E76",
-    marginTop: 2,
-    marginHorizontal: 20
+    marginTop: 2
   },
   searchRow: {
     flexDirection: "row",
-    gap: 8,
+    gap: 10,
     marginHorizontal: 20,
-    marginTop: 12
+    marginTop: 14
   },
   searchBox: {
     flex: 1,
     height: 48,
     borderWidth: 1,
-    borderColor: "#ECECF1",
-    borderRadius: 12,
+    borderColor: "#E5E7EB",
+    borderRadius: 16,
+    backgroundColor: "#F9FAFB",
     paddingHorizontal: 14,
     flexDirection: "row",
     alignItems: "center",
@@ -300,125 +637,159 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 14,
-    color: COLORS.textPrimary,
+    color: "#1D1B20",
     paddingVertical: 0,
     minWidth: 0
-  },
-  clear: {
-    fontSize: 24,
-    color: "#6E6E76"
   },
   filterButton: {
     width: 48,
     height: 48,
-    borderRadius: 12,
-    backgroundColor: COLORS.primary,
+    borderRadius: 16,
+    backgroundColor: "#F4F0FF",
+    borderWidth: 1,
+    borderColor: "#E9E3FA",
     alignItems: "center",
-    justifyContent: "center"
+    justifyContent: "center",
+    position: "relative"
+  },
+  filterButtonActive: {
+    backgroundColor: "#7F56D9",
+    borderColor: "#7F56D9"
   },
   filterBadge: {
     position: "absolute",
     right: -4,
     top: -4,
     borderRadius: 10,
-    backgroundColor: COLORS.textPrimary,
+    backgroundColor: "#1D1B20",
     minWidth: 18,
-    alignItems: "center"
+    height: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4
   },
   filterBadgeText: {
     color: "white",
-    fontSize: 11,
-    lineHeight: 18
+    fontSize: 10,
+    fontWeight: "700"
   },
-  categories: {
+  categoriesContainer: {
     paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 13,
+    paddingTop: 14,
+    paddingBottom: 8,
     gap: 8
   },
-  chip: {
-    backgroundColor: "#F6F6F9",
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 7
-  },
-  activeChip: {
-    backgroundColor: COLORS.primary
-  },
-  chipText: {
-    fontSize: 12.5,
-    lineHeight: 19,
-    fontWeight: "600",
-    color: COLORS.textSecondary
-  },
-  activeChipText: {
-    color: "white"
-  },
-  resultsHeader: {
+  categoryChip: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginHorizontal: 20,
-    minHeight: 48
+    gap: 6,
+    backgroundColor: "#F4F0FF",
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: "#E9E3FA"
   },
-  resultsCount: {
-    color: COLORS.textPrimary,
+  activeCategoryChip: {
+    backgroundColor: "#7F56D9",
+    borderColor: "#7F56D9",
+    boxShadow: "0px 4px 12px rgba(127, 86, 217, 0.25)",
+    elevation: 2
+  },
+  categoryChipText: {
+    fontSize: 13,
     fontWeight: "600",
-    fontSize: 13
+    color: "#7F56D9"
   },
-  sortButton: {
-    paddingVertical: 12
+  activeCategoryChipText: {
+    color: "#FFFFFF",
+    fontWeight: "700"
   },
-  link: {
-    color: COLORS.primary,
-    fontSize: 12,
-    fontWeight: "600"
-  },
-  list: {
+  quickFilterBar: {
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 20,
-    paddingBottom: 24,
-    flexGrow: 1
+    paddingVertical: 10,
+    gap: 8
+  },
+  quickFilterPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 16,
+    paddingHorizontal: 11,
+    paddingVertical: 6
+  },
+  quickFilterPillActive: {
+    backgroundColor: "#F4F0FF",
+    borderColor: "#7F56D9"
+  },
+  quickFilterText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#6E6E76"
+  },
+  quickFilterTextActive: {
+    color: "#7F56D9",
+    fontWeight: "700"
+  },
+  pressed: {
+    opacity: 0.75,
+    transform: [{ scale: 0.97 }]
+  },
+  listContent: {
+    padding: 20,
+    gap: 16
   },
   card: {
     flexDirection: "row",
-    gap: 12,
-    backgroundColor: "white",
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 12,
-    shadowColor: "#272727",
-    shadowOffset: {
-      width: 0,
-      height: 6
-    },
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 2
+    gap: 14,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#F2F0F9",
+    boxShadow: "0px 6px 18px rgba(127, 86, 217, 0.08)",
+    elevation: 3
   },
-  pressed: {
-    opacity: 0.75
+  cardPressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.98 }]
   },
-  avatarSlot: {
-    width: 60,
-    height: 64
+  photoContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 20,
+    backgroundColor: "#F7F4FD",
+    overflow: "hidden",
+    position: "relative"
   },
-  avatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 16.8,
-    backgroundColor: "#F1EDFE",
+  providerPhoto: {
+    width: "100%",
+    height: "100%"
+  },
+  photoFallback: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#F2EEFE",
     alignItems: "center",
     justifyContent: "center"
   },
-  initials: {
-    color: COLORS.primary,
-    fontSize: 20.4,
-    fontWeight: "600"
+  photoInitials: {
+    color: "#7F56D9",
+    fontSize: 22,
+    fontWeight: "800"
   },
-  verified: {
+  verifiedBadge: {
     position: "absolute",
-    left: 42.41,
-    top: 42.41
+    bottom: 4,
+    right: 4,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 10,
+    padding: 1
   },
   cardBody: {
     flex: 1,
@@ -427,232 +798,256 @@ const styles = StyleSheet.create({
   rowBetween: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
+    alignItems: "center",
     gap: 6
   },
   providerName: {
-    fontSize: 15,
-    fontWeight: "600",
-    lineHeight: 19,
-    color: COLORS.textPrimary,
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#1D1B20",
     flex: 1
   },
-  rating: {
+  ratingBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 3
+    gap: 3,
+    backgroundColor: "#FFFBEB",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10
   },
   ratingText: {
     fontSize: 12,
-    color: COLORS.textPrimary,
-    fontWeight: "600"
+    color: "#B45309",
+    fontWeight: "700"
   },
-  smallMuted: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: "#6E6E76",
-    flexShrink: 1
+  reviewCountText: {
+    fontSize: 11,
+    color: "#98A2B3"
   },
-  categoryText: {
-    color: COLORS.primary,
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 2
-  },
-  metadata: {
+  categoryBadgeRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
+    alignItems: "center",
+    gap: 6,
+    marginTop: 4
+  },
+  categoryBadge: {
+    backgroundColor: "#F4F0FF",
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 8
+  },
+  categoryBadgeText: {
+    color: "#7F56D9",
+    fontSize: 11,
+    fontWeight: "700"
+  },
+  todayBadge: {
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8
+  },
+  todayBadgeText: {
+    color: "#047857",
+    fontSize: 11,
+    fontWeight: "700"
+  },
+  metaRow: {
+    gap: 4,
     marginTop: 8
   },
   metaItem: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 5
+  },
+  metaText: {
+    fontSize: 12,
+    color: "#6E6E76",
     flexShrink: 1
   },
   cardFooter: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    flexWrap: "wrap",
-    gap: 6,
-    marginTop: 10
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#F3F4F6"
   },
-  price: {
-    color: COLORS.textPrimary,
-    fontSize: 13,
-    fontWeight: "700",
-    lineHeight: 20
+  priceAmount: {
+    color: "#1D1B20",
+    fontSize: 14,
+    fontWeight: "800"
   },
-  unit: {
-    color: "#6E6E76",
-    fontSize: 11,
-    fontWeight: "400"
-  },
-  profileLink: {
+  profileBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 2
   },
-  empty: {
-    flex: 1,
+  profileBtnText: {
+    color: "#7F56D9",
+    fontSize: 12,
+    fontWeight: "700"
+  },
+  emptyContainer: {
     alignItems: "center",
     justifyContent: "center",
-    padding: 24,
-    gap: 12
+    padding: 30,
+    marginTop: 40
   },
   emptyTitle: {
     fontSize: 18,
-    fontWeight: "600",
-    color: COLORS.textPrimary
+    fontWeight: "700",
+    color: "#1D1B20"
   },
-  emptyDescription: {
+  emptySubtitle: {
+    fontSize: 13,
     color: "#6E6E76",
-    textAlign: "center",
-    lineHeight: 22
+    marginTop: 4,
+    textAlign: "center"
+  },
+  resetBtn: {
+    marginTop: 16,
+    backgroundColor: "#F4F0FF",
+    borderWidth: 1,
+    borderColor: "#E9E3FA",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 14
+  },
+  resetBtnText: {
+    color: "#7F56D9",
+    fontSize: 13,
+    fontWeight: "700"
   },
   errorBanner: {
     marginHorizontal: 20,
-    marginBottom: 12,
+    marginTop: 12,
     padding: 14,
-    borderRadius: 12,
-    backgroundColor: "#FFF1F1"
+    borderRadius: 14,
+    backgroundColor: "#FEF2F2"
   },
   errorText: {
-    color: "#B42318",
-    lineHeight: 21,
+    color: "#991B1B",
     fontSize: 13
   },
   distanceNote: {
     marginHorizontal: 20,
-    marginBottom: 12,
-    fontSize: 11,
+    marginTop: 8,
+    fontSize: 12,
     color: "#6E6E76"
   },
   modal: {
     flex: 1,
-    backgroundColor: "rgba(39,39,39,0.4)",
+    backgroundColor: "rgba(0,0,0,0.4)",
     justifyContent: "flex-end"
   },
   sheet: {
     backgroundColor: "white",
     padding: 20,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28
   },
   sheetHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 12
+    marginBottom: 16
   },
   sheetTitle: {
     fontSize: 20,
-    fontWeight: "700",
-    color: COLORS.textPrimary,
-    flexShrink: 1
+    fontWeight: "800",
+    color: "#1D1B20"
   },
   close: {
-    minHeight: 44,
-    minWidth: 44,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#F3F4F6",
     alignItems: "center",
     justifyContent: "center"
   },
-  closeText: {
-    fontSize: 30,
-    color: "#6E6E76"
-  },
   sheetContent: {
     paddingBottom: 12,
-    gap: 12
+    gap: 14
   },
   label: {
     fontSize: 14,
-    fontWeight: "600",
-    color: COLORS.textPrimary
+    fontWeight: "700",
+    color: "#1D1B20"
   },
   input: {
     borderWidth: 1,
-    borderColor: "#ECECF1",
-    borderRadius: 12,
+    borderColor: "#E5E7EB",
+    borderRadius: 14,
     paddingHorizontal: 14,
-    paddingVertical: 14,
-    fontSize: 15,
-    color: COLORS.textPrimary
+    paddingVertical: 12,
+    fontSize: 14,
+    color: "#1D1B20",
+    backgroundColor: "#F9FAFB"
   },
   optionRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8
   },
+  chip: {
+    backgroundColor: "#F3F4F6",
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 8
+  },
+  activeChip: {
+    backgroundColor: "#7F56D9"
+  },
+  chipText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#4B5563"
+  },
+  activeChipText: {
+    color: "#FFFFFF"
+  },
   toggleRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 8
+    paddingVertical: 6
   },
   primaryButton: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 12,
+    backgroundColor: "#7F56D9",
+    borderRadius: 16,
     padding: 16,
-    alignItems: "center"
+    alignItems: "center",
+    marginTop: 8
   },
   primaryText: {
-    fontSize: 14,
+    fontSize: 15,
     color: "white",
-    fontWeight: "600"
+    fontWeight: "700"
   },
   secondaryButton: {
     padding: 12,
     alignItems: "center"
   },
+  link: {
+    color: "#7F56D9",
+    fontSize: 14,
+    fontWeight: "700"
+  },
   sortOption: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingVertical: 18,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#ECECF1"
+    alignItems: "center",
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6"
   },
   optionText: {
     fontSize: 15,
-    color: COLORS.textPrimary
-  },
-  profileLoader: {
-    paddingVertical: 50
-  },
-  profileHeading: {
-    flexDirection: "row",
-    gap: 14,
-    alignItems: "center"
-  },
-  flex: {
-    flex: 1
-  },
-  profilePrice: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: COLORS.textPrimary,
-    paddingVertical: 12
-  },
-  bodyText: {
-    color: "#6E6E76",
-    fontSize: 14,
-    lineHeight: 22
-  },
-  detailRow: {
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderTopColor: "#ECECF1",
-    gap: 6
-  },
-  detailLabel: {
-    fontSize: 12,
-    color: "#6E6E76"
-  },
-  detailValue: {
-    fontSize: 14,
-    color: COLORS.textPrimary,
-    lineHeight: 21
+    fontWeight: "600",
+    color: "#1D1B20"
   }
 });
