@@ -5,12 +5,10 @@ import {
   StyleSheet,
   StatusBar,
   ActivityIndicator,
-  Dimensions,
+  Image,
 } from "react-native";
 import { COLORS } from "../../constants/theme";
 import { useAuth } from "../../context/AuthContext";
-
-const { width } = Dimensions.get("window");
 
 const SplashScreen = ({ navigation }) => {
   const { isAuthenticated, userRole, isLoading } = useAuth();
@@ -42,9 +40,13 @@ const SplashScreen = ({ navigation }) => {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
       
-      {/* Brand Icon / Logo Placeholder */}
-      <View style={styles.logoBadge}>
-        <Text style={styles.logoBadgeText}>FM</Text>
+      {/* Brand Logo Image */}
+      <View style={styles.logoContainer}>
+        <Image
+          source={require("../../../assets/images/FixMate Logo.png")}
+          style={styles.logoImage}
+          resizeMode="contain"
+        />
       </View>
 
       <Text style={styles.appName}>FixMate</Text>
@@ -67,25 +69,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 24,
   },
-  logoBadge: {
-    width: 100,
-    height: 100,
-    borderRadius: 30,
-    backgroundColor: COLORS.secondary,
+  logoContainer: {
+    width: 140,
+    height: 140,
+    marginBottom: 20,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 8,
   },
-  logoBadgeText: {
-    fontSize: 38,
-    fontWeight: "900",
-    color: COLORS.primary,
-    letterSpacing: 1,
+  logoImage: {
+    width: "100%",
+    height: "100%",
   },
   appName: {
     fontSize: 42,

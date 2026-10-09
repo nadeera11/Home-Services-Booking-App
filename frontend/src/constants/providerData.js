@@ -190,3 +190,25 @@ export const getInitials = (name = "") => {
   const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
   return (first + last).toUpperCase();
 };
+
+// Totals use provider-confirmed receipts, never accepted quotes or unpaid work.
+export const sriLankaDay = value => new Date(new Date(value).getTime() + 19800000).toISOString().slice(0, 10);
+export function providerMetrics(bookings, now = new Date()) {
+  const today = sriLankaDay(now), local = new Date(today + 'T00:00:00Z');
+  const monday = new Date(local); monday.setUTCDate(local.getUTCDate() - (local.getUTCDay() + 6) % 7);
+  const weekStart = monday.toISOString().slice(0, 10), month = today.slice(0, 7);
+  const amount = b => Number.isSafeInteger(b.invoice?.totalMinor) ? b.invoice.totalMinor : 0;
+  const receipts = bookings.filter(b => b.invoice && b.payment?.status === 'paid' && b.payment?.paidAt && Number.isFinite(Date.parse(b.payment.paidAt)) && new Date(b.payment.paidAt) <= now);
+  const inMonth = receipts.filter(b => sriLankaDay(b.payment.paidAt).startsWith(month));
+  const active = bookings.filter(b => ['awaiting_quote', 'confirmed', 'inspection_confirmed', 'inspecting', 'quote_pending', 'ongoing'].includes(b.status));
+  const weeks = Array.from({ length: 5 }, (_, i) => ({ label: `${i * 7 + 1}–${Math.min(i * 7 + 7, new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth() + 1, 0)).getUTCDate())}`, amount: inMonth.filter(b => Math.floor((Number(sriLankaDay(b.payment.paidAt).slice(8)) - 1) / 7) === i).reduce((n, b) => n + amount(b), 0) })).filter((_, i) => i < 4 || new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth() + 1, 0)).getUTCDate() > 28);
+  return {
+    today: bookings.filter(b => b.scheduleConfirmed && !['pending', 'time_proposed', 'cancelled', 'rejected'].includes(b.status) && sriLankaDay(b.startsAt) === today).sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt)),
+    active, completed: bookings.filter(b => b.status === 'completed').length,
+    weekReceived: receipts.filter(b => sriLankaDay(b.payment.paidAt) >= weekStart).reduce((n, b) => n + amount(b), 0),
+    monthReceived: inMonth.reduce((n, b) => n + amount(b), 0), weeks,
+    awaiting: bookings.filter(b => b.invoice && b.payment?.status === 'awaiting_confirmation').reduce((n, b) => n + amount(b), 0),
+    unpaid: bookings.filter(b => b.invoice && (!b.payment || b.payment.status === 'unpaid')).reduce((n, b) => n + amount(b), 0),
+    invoices: bookings.filter(b => b.invoice).sort((a, b) => new Date(b.payment?.paidAt || b.invoice.issuedAt) - new Date(a.payment?.paidAt || a.invoice.issuedAt)),
+  };
+}

@@ -39,7 +39,7 @@ function createPaymentController(Booking) {
       if (!b) return res.status(404).json({ message: 'Booking not found.' });
       if (b.status !== 'completed' || !b.invoice) return res.status(409).json({ message: 'Payment is available only after completion and an approved invoice.' });
       const { action, method, reference = '' } = req.body || {};
-      if (b.payment?.status === 'paid') return res.json({ booking: require('./bookingController').dto(b) });
+      if (b.payment?.status === 'paid') return res.json({ booking: await require('./bookingController').currentDto(b) });
       let payment;
       if (!provider && action === 'report') {
         if (!['cash', 'bank_transfer'].includes(method) || typeof reference !== 'string' || reference.length > 200 || (method === 'bank_transfer' && !reference.trim())) return res.status(400).json({ message: 'Choose cash or bank transfer and enter the transfer reference when applicable.' });
@@ -53,7 +53,7 @@ function createPaymentController(Booking) {
       } else return res.status(409).json({ message: 'This payment action is not available.' });
       const updated = await Booking.findOneAndUpdate({ _id: b._id, ...owner, __v: b.__v }, { $set: { payment }, $inc: { __v: 1 }, $push: { history: { status: b.status, action: 'payment_' + action, at: new Date() }, ...(!provider ? { providerNotifications: require('./bookingController').event('payment', 'Customer reported a payment. Confirm receipt.') } : {}) } }, { returnDocument: 'after', runValidators: true });
       if (!updated) return res.status(409).json({ message: 'Payment changed. Refresh before trying again.' });
-      res.json({ booking: require('./bookingController').dto(updated) });
+      res.json({ booking: await require('./bookingController').currentDto(updated) });
     } catch { res.status(503).json({ message: 'Unable to update payment. Please try again.' }); }
   };
 }

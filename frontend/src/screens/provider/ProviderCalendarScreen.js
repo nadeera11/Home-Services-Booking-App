@@ -1,568 +1,128 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  View,
-  Text,
-  Pressable,
-  ScrollView,
-  Modal,
-  StatusBar,
-  StyleSheet,
-  Alert,
-  ActivityIndicator,
-} from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { View, Text, Pressable, ScrollView, Modal, StatusBar, StyleSheet, ActivityIndicator, TextInput } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useIsFocused } from "@react-navigation/native";
+import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import { COLORS, SHADOWS } from "../../constants/theme";
 import ScreenHeader, { BellButton } from "../../components/provider/ScreenHeader";
-import providerService from "../../services/providerService";
+import { providerService } from "../../services/providerService";
+import { bookingService, BOOKING_TIMES, bookingTime, bookingDate } from "../../services/bookingService";
+import { useProviderData } from "../../context/ProviderContext";
+import { sriLankaDay } from "../../constants/providerData";
 
-// ---------------------------------------------------------------------------
-// Date helpers
-// ---------------------------------------------------------------------------
-const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const DAY_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const MONTH_LONG = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
-const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-// Working-day chips are shown Monday first; values are weekday numbers.
-const WORKING_ORDER = [1, 2, 3, 4, 5, 6, 0];
-
-const dateKey = (d) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
-const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
-const startOfWeek = (d) => addDays(d, -d.getDay());
-
-const weekLabel = (start) => {
-  const end = addDays(start, 6);
-  if (start.getMonth() === end.getMonth()) {
-    return `${start.getDate()} – ${end.getDate()} ${MONTH_LONG[start.getMonth()]}`;
-  }
-  return `${start.getDate()} ${MONTH_SHORT[start.getMonth()]} – ${end.getDate()} ${MONTH_SHORT[end.getMonth()]}`;
-};
-
-const formatTime = (mins) => {
-  const h24 = Math.floor(mins / 60);
-  const m = mins % 60;
-  const period = h24 >= 12 ? "PM" : "AM";
-  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-  return `${h12}:${String(m).padStart(2, "0")} ${period}`;
-};
-
-const GREEN = "#0F8A5F";
-const TYPE_STYLES = {
-  available: { label: "Available", bg: "#DDF5EA", text: GREEN, accent: "#10B981" },
-  booked: { label: "Booked", bg: "#EEEAFD", text: COLORS.primary, accent: COLORS.primary },
-};
-const DOT_COLORS = { available: "#10B981", booked: COLORS.primary, off: "#D9DDE7" };
-
-const START_OPTIONS = Array.from({ length: 12 }, (_, i) => (7 + i) * 60); // 7 AM – 6 PM
-const DURATION_OPTIONS = [60, 120, 180, 240];
-
-// ---------------------------------------------------------------------------
-// Add availability sheet
-// ---------------------------------------------------------------------------
-const AddSlotSheet = ({ visible, title, existing, onClose, onAdd, submitting }) => {
-  const insets = useSafeAreaInsets();
-  const [start, setStart] = useState(9 * 60);
-  const [duration, setDuration] = useState(120);
-
-  const end = start + duration;
-  const conflict = existing.some((s) => start < s.end && end > s.start);
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
-      <View style={styles.sheetRoot}>
-        <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Close" />
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
-          <View style={styles.handle} />
-          <View style={styles.sheetHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.sheetTitle}>Add availability</Text>
-              <Text style={styles.sheetSub}>{title}</Text>
-            </View>
-            <Pressable onPress={onClose} style={styles.closeBtn} accessibilityLabel="Close">
-              <MaterialCommunityIcons name="close" size={20} color={COLORS.textPrimary} />
-            </Pressable>
-          </View>
-
-          <Text style={styles.sheetLabel}>Start time</Text>
-          <View style={styles.chipWrap}>
-            {START_OPTIONS.map((m) => {
-              const active = m === start;
-              return (
-                <Pressable
-                  key={m}
-                  onPress={() => setStart(m)}
-                  style={[styles.optChip, active && styles.optChipActive]}
-                >
-                  <Text style={[styles.optText, active && styles.optTextActive]}>{formatTime(m)}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          <Text style={styles.sheetLabel}>Duration</Text>
-          <View style={styles.chipWrap}>
-            {DURATION_OPTIONS.map((m) => {
-              const active = m === duration;
-              return (
-                <Pressable
-                  key={m}
-                  onPress={() => setDuration(m)}
-                  style={[styles.optChip, active && styles.optChipActive]}
-                >
-                  <Text style={[styles.optText, active && styles.optTextActive]}>
-                    {m / 60} {m === 60 ? "hr" : "hrs"}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          <View style={[styles.summary, conflict && styles.summaryError]}>
-            <MaterialCommunityIcons
-              name={conflict ? "alert-circle-outline" : "clock-outline"}
-              size={18}
-              color={conflict ? COLORS.error : COLORS.primary}
-            />
-            <Text style={[styles.summaryText, conflict && { color: COLORS.error }]}>
-              {conflict
-                ? "This overlaps another slot on this day."
-                : `${formatTime(start)} – ${formatTime(end)}`}
-            </Text>
-          </View>
-
-          <View style={styles.sheetFooter}>
-            <Pressable onPress={onClose} style={[styles.sheetBtn, styles.sheetCancel]}>
-              <Text style={styles.sheetCancelText}>Cancel</Text>
-            </Pressable>
-            <Pressable
-              disabled={conflict || submitting}
-              onPress={() => onAdd(start, end)}
-              style={[styles.sheetBtn, styles.sheetSave, (conflict || submitting) && { opacity: 0.45 }]}
-            >
-              {submitting ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Text style={styles.sheetSaveText}>Add slot</Text>
-              )}
-            </Pressable>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-};
-
-// ---------------------------------------------------------------------------
-// Screen
-// ---------------------------------------------------------------------------
-const ProviderCalendarScreen = () => {
-  const focused = useIsFocused();
-
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-
-  const [selected, setSelected] = useState(() => {
-    const n = new Date();
-    return new Date(n.getFullYear(), n.getMonth(), n.getDate());
-  });
-
-  // Real availability data state stored in MongoDB
-  const [working, setWorking] = useState({ 0: false, 1: true, 2: true, 3: true, 4: true, 5: true, 6: true });
-  const [offDates, setOffDates] = useState([]); // Array of dateKeys marked unavailable e.g. ["2026-10-05"]
-  const [allSlots, setAllSlots] = useState([]); // Array of slot objects from MongoDB
-  const [sheetOpen, setSheetOpen] = useState(false);
-
-  const selKey = dateKey(selected);
-  const weekStart = useMemo(() => startOfWeek(selected), [selected]);
-  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
-
-  // Fetch real availability from MongoDB
-  const fetchAvailability = useCallback(async () => {
-    try {
-      setLoading(true);
-      const data = await providerService.getAvailability();
-      if (data) {
-        if (data.workingDays) setWorking(data.workingDays);
-        if (Array.isArray(data.offDates)) setOffDates(data.offDates);
-        if (Array.isArray(data.slots)) setAllSlots(data.slots);
-      }
-    } catch (err) {
-      console.error("Fetch Availability Error:", err);
-      Alert.alert("Error", "Failed to load availability data from server.");
-    } finally {
-      setLoading(false);
-    }
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], ORDER = [1, 2, 3, 4, 5, 6, 0];
+const shift = (key, n) => new Date(Date.parse(key + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+const weekday = key => new Date(key + 'T00:00:00Z').getUTCDay();
+const at = (key, time = '08:00') => new Date(key + 'T' + time + ':00+05:30').toISOString();
+const stamp = key => at(key, '12:00');
+const message = e => e.response?.data?.message || 'Could not connect. Your changes are kept. Check your connection and retry.';
+const legacyDay = value => { const parts = value.split('-'); return parts.length === 3 ? parts[0] + '-' + parts[1].padStart(2, '0') + '-' + parts[2].padStart(2, '0') : value; };
+function Button({ title, onPress, disabled, secondary }) {
+  return <Pressable accessibilityRole="button" accessibilityState={{ disabled: !!disabled }} disabled={disabled} onPress={onPress} style={[styles.control, secondary && styles.controlSecondary, disabled && { opacity: 0.45 }]}><Text style={[styles.controlText, secondary && { color: COLORS.primary }]}>{title}</Text></Pressable>;
+}
+function ScheduleSettings({ calendar, busy, save }) {
+  const [duration, setDuration] = useState(String(calendar.durationMinutes)), [buffer, setBuffer] = useState(String(calendar.bufferMinutes));
+  const [error, setError] = useState(''), [baseline, setBaseline] = useState({ duration: calendar.durationMinutes, buffer: calendar.bufferMinutes });
+  const stale = baseline.duration !== calendar.durationMinutes || baseline.buffer !== calendar.bufferMinutes;
+  return <View style={[styles.card, styles.cardSpaced]}><Text style={styles.dayTitle}>Service & travel time</Text><Text style={styles.note}>Applies to new requests. Existing bookings keep their agreed duration and travel buffer.</Text><Text style={styles.cardTitle}>Service duration (minutes)</Text><TextInput accessibilityLabel="Service duration in minutes" keyboardType="number-pad" value={duration} onChangeText={setDuration} editable={!busy} maxLength={3} style={styles.input} /><Text style={styles.cardTitle}>Travel buffer (minutes)</Text><TextInput accessibilityLabel="Travel buffer in minutes" keyboardType="number-pad" value={buffer} onChangeText={setBuffer} editable={!busy} maxLength={3} style={styles.input} />{!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}{stale && <><Text accessibilityRole="alert" style={styles.note}>Appointment settings changed elsewhere. Current settings: {calendar.durationMinutes} min service, {calendar.bufferMinutes} min travel. Your draft is kept.</Text><Button secondary title="Review current settings and keep my draft" disabled={busy} onPress={() => setBaseline({ duration: calendar.durationMinutes, buffer: calendar.bufferMinutes })} /></>}<Button secondary title="Save duration & buffer" disabled={busy || stale} onPress={async () => {
+    if (!/^\d+$/.test(duration) || !/^\d+$/.test(buffer) || +duration < 30 || +duration > 480 || +buffer > 120) { setError('Use 30–480 minutes for service and 0–120 minutes for travel.'); return; }
+    setError(''); const saved = await save(() => bookingService.saveScheduleSettings({ durationMinutes: +duration, bufferMinutes: +buffer, version: calendar.version })); if (saved) setBaseline({ duration: saved.durationMinutes, buffer: saved.bufferMinutes });
+  }} /></View>;
+}
+const ProviderCalendarScreen = ({ navigation }) => {
+  const { online } = useProviderData();
+  const focused = useIsFocused(), insets = useSafeAreaInsets();
+  const [selected, setSelected] = useState(() => sriLankaDay(new Date())), [calendar, setCalendar] = useState(null);
+  const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('');
+  const [needsRefresh, setNeedsRefresh] = useState(false);
+  const [sheet, setSheet] = useState(false), [time, setTime] = useState(''), [withdraw, setWithdraw] = useState(null);
+  const lock = useRef(false), request = useRef(null), scroll = useRef(null), dayStrip = useRef(null);
+  useEffect(() => { dayStrip.current?.scrollTo({ x: Math.max(0, weekday(selected) * 56 - 100), animated: false }); }, [selected]);
+  const load = useCallback(async (quiet = false) => {
+    if (lock.current) return;
+    request.current?.abort(); const c = new AbortController(); request.current = c;
+    if (!quiet) setLoading(true);
+    try { const result = await providerService.getAvailability(c.signal); if (!c.signal.aborted) { setCalendar(result); setNeedsRefresh(false); setError(''); } }
+    catch (e) { if (!c.signal.aborted) setError(message(e)); }
+    finally { if (!c.signal.aborted) setLoading(false); }
   }, []);
-
-  useEffect(() => {
-    if (focused) {
-      fetchAvailability();
-    }
-  }, [focused, fetchAvailability]);
-
-  const isOff = useMemo(() => offDates.includes(selKey), [offDates, selKey]);
-
-  const isOpenDay = useCallback(
-    (d) => !!working[d.getDay()] && !offDates.includes(dateKey(d)),
-    [working, offDates]
-  );
-
-  const slotsFor = useCallback(
-    (d) => {
-      const k = dateKey(d);
-      return allSlots
-        .filter((s) => s.dateKey === k)
-        .sort((a, b) => a.start - b.start);
-    },
-    [allSlots]
-  );
-
-  const statusFor = useCallback(
-    (d) => {
-      if (!isOpenDay(d)) return "off";
-      const slots = slotsFor(d);
-      if (slots.some((s) => s.type === "booked")) return "booked";
-      if (slots.length > 0) return "available";
-      return "available"; // Working day defaults to available
-    },
-    [isOpenDay, slotsFor]
-  );
-
-  const selectedOpen = isOpenDay(selected);
-  const selectedSlots = selectedOpen ? slotsFor(selected) : [];
-  const bookedCount = selectedSlots.filter((s) => s.type === "booked").length;
-  const openCount = selectedSlots.length - bookedCount;
-  const dayTitle = `${DAY_SHORT[selected.getDay()]}, ${selected.getDate()} ${MONTH_SHORT[selected.getMonth()]}`;
-
-  const shiftWeek = (n) => setSelected((d) => addDays(d, n * 7));
-
-  // Update working days in database
-  const toggleWorking = async (idx) => {
-    const nextWorking = { ...working, [idx]: !working[idx] };
-    setWorking(nextWorking);
-
+  useFocusEffect(useCallback(() => { void load(); const timer = setInterval(() => load(true), 30000); return () => { clearInterval(timer); request.current?.abort(); }; }, [load]));
+  async function save(action, after) {
+    if (lock.current || needsRefresh) return;
+    lock.current = true; request.current?.abort(); setLoading(false); setBusy(true); setError(''); setNotice('');
+    let committed = false;
     try {
-      await providerService.updateWorkingDays(nextWorking);
-    } catch (err) {
-      Alert.alert("Error", "Failed to update working days.");
-      setWorking(working); // Revert on failure
-    }
+      await action(); committed = true; after?.(); setNotice('Saved. Existing bookings remain scheduled.');
+      const result = await providerService.getAvailability(); setCalendar(result); return result;
+    } catch (e) { setNeedsRefresh(true); setError(committed ? 'Your change was saved, but the calendar could not refresh. Refresh calendar before making another change.' : message(e) + ' Refresh calendar before trying again.'); scroll.current?.scrollTo({ y: 0, animated: true }); }
+    finally { lock.current = false; setBusy(false); }
+  }
+  const today = sriLankaDay(new Date()), futureDay = selected >= today && selected <= shift(today, 89);
+  const weekStart = shift(selected, -weekday(selected)), days = Array.from({ length: 7 }, (_, i) => shift(weekStart, i));
+  const isOpen = date => !!calendar && calendar.workingDays[weekday(date)] !== false && !calendar.offDates.includes(date);
+  const isOff = calendar?.offDates.includes(selected), open = isOpen(selected);
+  const reservations = (calendar?.bookings || []).filter(b => sriLankaDay(b.startsAt) === selected);
+  const published = (calendar?.slots || []).filter(s => s.date === selected && !reservations.some(b => b.startsAt === s.startsAt));
+  const legacy = (calendar?.legacySlots || []).filter(s => legacyDay(s.dateKey) === selected);
+  const count = published.filter(s => s.available).length;
+  const statusFor = date => (calendar?.bookings || []).some(b => sriLankaDay(b.startsAt) === date) ? 'Reserved / booked' : (calendar?.slots || []).some(s => s.date === date && s.available) ? 'Available' : 'No open slots';
+  const blocked = busy || needsRefresh || loading;
+  const weeklyPaused = calendar?.workingDays[weekday(selected)] === false;
+  const timeReason = t => {
+    const start = at(selected, t), begin = Date.parse(start);
+    if (!futureDay || begin <= new Date().getTime()) return 'Outside booking window';
+    if (calendar?.slots.some(s => s.startsAt === start)) return 'Published';
+    if ((calendar?.bookings || []).some(b => begin < Date.parse(b.startsAt) + ((b.durationMinutes ?? 60) + (b.bufferMinutes ?? 30)) * 60000 && Date.parse(b.startsAt) < begin + (calendar.durationMinutes + calendar.bufferMinutes) * 60000)) return 'Booking / travel conflict';
+    return '';
   };
-
-  // Toggle day availability (Mark Available / Mark Unavailable) in database
-  const handleToggleOff = async () => {
-    if (!isOff && !working[selected.getDay()]) {
-      Alert.alert("Already unavailable", `${DAY_LONG[selected.getDay()]} is not one of your working days.`);
-      return;
-    }
-    if (!isOff && bookedCount > 0) {
-      Alert.alert(
-        "Can't mark unavailable",
-        `You have ${bookedCount} booked ${bookedCount === 1 ? "job" : "jobs"} on this day. Reschedule or cancel ${bookedCount === 1 ? "it" : "them"} first.`
-      );
-      return;
-    }
-
-    try {
-      const res = await providerService.toggleOffDate(selKey);
-      if (res && Array.isArray(res.offDates)) {
-        setOffDates(res.offDates);
-        Alert.alert("Availability Updated", res.message || "Date availability saved.");
-      }
-    } catch (err) {
-      Alert.alert("Error", err.response?.data?.message || "Failed to update date availability.");
-    }
-  };
-
-  const openAddSheet = () => {
-    if (!selectedOpen) {
-      Alert.alert(
-        "Day is unavailable",
-        isOff
-          ? "Mark this day as available before adding slots."
-          : `Turn on ${DAY_LONG[selected.getDay()]} in Working days first.`
-      );
-      return;
-    }
-    setSheetOpen(true);
-  };
-
-  // Save new time slot to database
-  const handleAdd = async (start, end) => {
-    try {
-      setSubmitting(true);
-      const res = await providerService.addSlot({
-        dateKey: selKey,
-        start,
-        end,
-        title: "Open for bookings",
-      });
-
-      if (res && Array.isArray(res.slots)) {
-        setAllSlots(res.slots);
-        setSheetOpen(false);
-        Alert.alert("Success 🎉", "Availability slot added successfully.");
-      }
-    } catch (err) {
-      Alert.alert("Error", err.response?.data?.message || "Failed to add slot.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Remove custom slot from database
-  const handleSlotPress = (slot) => {
-    const slotId = slot._id || slot.id;
-    if (!slotId) return;
-
-    Alert.alert("Remove availability?", `${formatTime(slot.start)} – ${formatTime(slot.end)}`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Remove",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            const res = await providerService.removeSlot(slotId);
-            if (res && Array.isArray(res.slots)) {
-              setAllSlots(res.slots);
-              Alert.alert("Removed", "Slot removed from database.");
-            }
-          } catch (err) {
-            Alert.alert("Error", err.response?.data?.message || "Failed to remove slot.");
-          }
-        },
-      },
-    ]);
-  };
-
-  return (
-    <View style={styles.screen}>
-      {focused && <StatusBar barStyle="dark-content" backgroundColor={COLORS.secondary} />}
-
-      <ScreenHeader
-        title="Availability"
-        subtitle={`${MONTH_LONG[selected.getMonth()]} ${selected.getFullYear()}`}
-      >
-        <BellButton />
-      </ScreenHeader>
-
-      {loading ? (
-        <View style={styles.centerLoading}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Loading calendar availability...</Text>
+  const close = () => { if (!busy) setSheet(false); };
+  return <View style={styles.screen}>
+    {focused && <StatusBar barStyle="dark-content" backgroundColor={COLORS.secondary} />}
+    <ScreenHeader title="Availability" subtitle={bookingDate(stamp(selected), { day: undefined, month: 'long', year: 'numeric' }) + ' · Sri Lanka time'}><BellButton /></ScreenHeader>
+    <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollContent}>
+      {loading && <ActivityIndicator accessibilityLabel="Loading calendar" color={COLORS.primary} />}
+      {!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
+      {!!notice && <Text accessibilityLiveRegion="polite" style={styles.note}>{notice}</Text>}
+      <Button secondary title="Refresh calendar" disabled={busy || loading} onPress={() => load()} />
+      {calendar && <>
+        {!online && <View style={styles.card}><Text style={styles.dayTitle}>New requests are paused</Text><Text style={styles.note}>You can prepare availability here. Go online from your dashboard when you are ready to receive customer requests.</Text><Button secondary title="Open dashboard" onPress={() => navigation.navigate('Dashboard')} /></View>}
+        <Text style={styles.note}>Choose a date, then add an appointment start. Weekly rules and date pauses control which saved appointments customers can select.</Text>
+        <View style={styles.card}>
+          {selected !== today && <Button secondary title="Go to today" disabled={busy} onPress={() => { setSelected(today); setWithdraw(null); }} />}
+          <View style={styles.weekHeader}><Pressable accessibilityRole="button" accessibilityLabel="Previous week" disabled={busy} onPress={() => setSelected(shift(selected, -7))} style={styles.navBtn}><MaterialCommunityIcons name="chevron-left" size={22} /></Pressable><Text style={[styles.weekText, { flex: 1, textAlign: 'center' }]}>{bookingDate(stamp(weekStart))} – {bookingDate(stamp(shift(weekStart, 6)))}</Text><Pressable accessibilityRole="button" accessibilityLabel="Next week" disabled={busy} onPress={() => setSelected(shift(selected, 7))} style={styles.navBtn}><MaterialCommunityIcons name="chevron-right" size={22} /></Pressable></View>
+          <ScrollView ref={dayStrip} horizontal onContentSizeChange={() => dayStrip.current?.scrollTo({ x: Math.max(0, weekday(selected) * 56 - 100), animated: false })} contentContainerStyle={styles.daysRow}>{days.map(date => { const status = statusFor(date), active = date === selected; return <Pressable key={date} accessibilityRole="button" accessibilityLabel={date + ', ' + status} accessibilityState={{ selected: active, disabled: busy }} disabled={busy} onPress={() => { setSelected(date); setWithdraw(null); }} style={[styles.dayPill, active && styles.dayPillActive]}><Text style={[styles.dayName, active && { color: '#FFF' }]}>{DAYS[weekday(date)]}</Text><Text style={[styles.dayNum, active && { color: '#FFF' }]}>{Number(date.slice(8))}</Text><View style={[styles.dayDot, { backgroundColor: active ? '#FFF' : status === 'Reserved / booked' ? COLORS.primary : status === 'Available' ? '#0F8A5F' : '#D9DDE7' }]} /></Pressable>; })}</ScrollView>
+          <View style={styles.legend}>{[['Available', '#0F8A5F'], ['Reserved / booked', COLORS.primary], ['No open slots', '#777']].map(([label, color]) => <View key={label} style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: color }]} /><Text style={styles.legendText}>{label}</Text></View>)}</View>
         </View>
-      ) : (
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Week card */}
-          <View style={styles.card}>
-            <View style={styles.weekHeader}>
-              <Pressable
-                onPress={() => shiftWeek(-1)}
-                style={styles.navBtn}
-                accessibilityRole="button"
-                accessibilityLabel="Previous week"
-              >
-                <MaterialCommunityIcons name="chevron-left" size={22} color={COLORS.textPrimary} />
-              </Pressable>
-              <Text style={styles.weekText}>{weekLabel(weekStart)}</Text>
-              <Pressable
-                onPress={() => shiftWeek(1)}
-                style={styles.navBtn}
-                accessibilityRole="button"
-                accessibilityLabel="Next week"
-              >
-                <MaterialCommunityIcons name="chevron-right" size={22} color={COLORS.textPrimary} />
-              </Pressable>
-            </View>
-
-            <View style={styles.daysRow}>
-              {days.map((d) => {
-                const status = statusFor(d);
-                const active = dateKey(d) === selKey;
-                const labelColor = active
-                  ? "#FFFFFF"
-                  : status === "off"
-                  ? COLORS.disabledText
-                  : status === "booked"
-                  ? COLORS.primary
-                  : COLORS.textPrimary;
-                return (
-                  <Pressable
-                    key={dateKey(d)}
-                    onPress={() => setSelected(d)}
-                    style={[styles.dayPill, active && styles.dayPillActive]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${DAY_LONG[d.getDay()]} ${d.getDate()}`}
-                    accessibilityState={{ selected: active }}
-                  >
-                    <Text style={[styles.dayName, { color: labelColor }, !active && { opacity: 0.85 }]}>
-                      {DAY_SHORT[d.getDay()]}
-                    </Text>
-                    <Text style={[styles.dayNum, { color: labelColor }]}>{d.getDate()}</Text>
-                    <View
-                      style={[
-                        styles.dayDot,
-                        { backgroundColor: active ? "#FFFFFF" : DOT_COLORS[status] },
-                      ]}
-                    />
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            <View style={styles.legend}>
-              {[
-                ["Available", DOT_COLORS.available],
-                ["Booked", DOT_COLORS.booked],
-                ["Unavailable", DOT_COLORS.off],
-              ].map(([label, color]) => (
-                <View key={label} style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: color }]} />
-                  <Text style={styles.legendText}>{label}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-
-          {/* Working days */}
-          <View style={[styles.card, styles.cardSpaced]}>
-            <Text style={styles.cardTitle}>Working days</Text>
-            <View style={styles.workRow}>
-              {WORKING_ORDER.map((idx) => {
-                const on = !!working[idx];
-                return (
-                  <Pressable
-                    key={idx}
-                    onPress={() => toggleWorking(idx)}
-                    style={[styles.workChip, on && styles.workChipOn]}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: on }}
-                  >
-                    <Text style={[styles.workText, on && styles.workTextOn]}>{DAY_SHORT[idx]}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
-
-          {/* Selected day */}
-          <View style={styles.dayHeader}>
-            <Text style={styles.dayTitle}>{dayTitle}</Text>
-            <Text style={styles.dayCount}>
-              {selectedOpen ? `${bookedCount} booked · ${openCount} open` : "Unavailable"}
-            </Text>
-          </View>
-
-          {selectedOpen && selectedSlots.length > 0 &&
-            selectedSlots.map((slot) => {
-              const tone = TYPE_STYLES[slot.type] || TYPE_STYLES.available;
-              return (
-                <Pressable
-                  key={slot._id || slot.id || `${slot.start}-${slot.end}`}
-                  onPress={() => handleSlotPress(slot)}
-                  style={[styles.slot, { borderLeftColor: tone.accent }]}
-                >
-                  <View style={styles.slotTime}>
-                    <Text style={styles.slotStart}>{formatTime(slot.start)}</Text>
-                    <Text style={styles.slotEnd}>{formatTime(slot.end)}</Text>
-                  </View>
-                  <View style={styles.slotBody}>
-                    <Text style={styles.slotTitle} numberOfLines={1}>
-                      {slot.title || "Open for bookings"}
-                    </Text>
-                    {!!slot.customer && (
-                      <Text style={styles.slotSub} numberOfLines={1}>
-                        {slot.customer}
-                      </Text>
-                    )}
-                  </View>
-                  <View style={[styles.statusPill, { backgroundColor: tone.bg }]}>
-                    <View style={[styles.statusDot, { backgroundColor: tone.text }]} />
-                    <Text style={[styles.statusText, { color: tone.text }]}>{tone.label}</Text>
-                  </View>
-                </Pressable>
-              );
-            })}
-
-          {(!selectedOpen || selectedSlots.length === 0) && (
-            <View style={styles.empty}>
-              <View style={styles.emptyIcon}>
-                <MaterialCommunityIcons name="calendar-remove-outline" size={26} color={COLORS.primary} />
-              </View>
-              <Text style={styles.emptyTitle}>
-                {isOff ? "Marked unavailable" : !working[selected.getDay()] ? "Not a working day" : "No custom slots yet"}
-              </Text>
-              <Text style={styles.emptyText}>
-                {isOff
-                  ? "Tap Mark available to open this day again."
-                  : !working[selected.getDay()]
-                  ? `Turn on ${DAY_SHORT[selected.getDay()]} in Working days to accept bookings.`
-                  : "Add specific time slots or leave open for full-day bookings."}
-              </Text>
-            </View>
-          )}
-        </ScrollView>
-      )}
-
-      {/* Sticky actions */}
-      {!loading && (
-        <View style={styles.actionBar}>
-          <Pressable
-            onPress={handleToggleOff}
-            style={({ pressed }) => [styles.actionBtn, styles.actionOutline, pressed && styles.pressed]}
-            accessibilityRole="button"
-          >
-            <MaterialCommunityIcons
-              name={isOff ? "calendar-check-outline" : "calendar-remove-outline"}
-              size={18}
-              color={COLORS.textPrimary}
-            />
-            <Text style={styles.actionOutlineText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
-              {isOff ? "Mark available" : "Mark unavailable"}
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={openAddSheet}
-            style={({ pressed }) => [styles.actionBtn, styles.actionPrimary, pressed && styles.pressed]}
-            accessibilityRole="button"
-          >
-            <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
-            <Text style={styles.actionPrimaryText} numberOfLines={1}>
-              Add availability
-            </Text>
-          </Pressable>
-        </View>
-      )}
-
-      <AddSlotSheet
-        key={sheetOpen ? selKey : "closed"}
-        visible={sheetOpen}
-        title={dayTitle}
-        existing={selectedSlots}
-        onClose={() => setSheetOpen(false)}
-        onAdd={handleAdd}
-        submitting={submitting}
-      />
-    </View>
-  );
+        <View style={[styles.card, styles.cardSpaced]}><Text style={styles.cardTitle}>Weekly publishing days</Text>{!!calendar.unrecognizedOffDates?.length && <Text style={styles.note}>Some older unavailable dates could not be interpreted. They are preserved for review: {calendar.unrecognizedOffDates.join(", ")}</Text>}<Text style={styles.note}>Applies every week and saves immediately. Turn a weekday off to pause its published appointments. Turning it on restores saved starts; it does not create appointments. Existing bookings stay scheduled.</Text><View style={styles.workRow}>{ORDER.map(d => <Pressable key={d} accessibilityRole="checkbox" aria-checked={calendar.workingDays[d] !== false} accessibilityState={{ checked: calendar.workingDays[d] !== false, disabled: busy }} disabled={blocked} onPress={() => save(() => providerService.updateWorkingDays({ ...calendar.workingDays, [d]: calendar.workingDays[d] === false }, calendar.version))} style={[styles.workChip, calendar.workingDays[d] !== false && styles.workChipOn]}><Text style={styles.workTextOn}>{DAYS[d]} {calendar.workingDays[d] !== false ? '✓' : '−'}</Text></Pressable>)}</View></View>
+        <View style={styles.dayHeader}><Text style={styles.dayTitle}>{bookingDate(stamp(selected), { weekday: 'short' })}</Text><Text style={styles.dayCount}>{reservations.length} reserved · {count} open</Text></View>
+        {!open && <View style={styles.card}><Text style={styles.dayTitle}>Publishing paused</Text><Text style={styles.note}>{weeklyPaused ? DAYS[weekday(selected)] + ' is disabled in your weekly publishing days. Enable it above to publish on this weekday.' : 'This date is marked unavailable. Resume this date to restore its saved appointments.'}{weeklyPaused && isOff ? ' This date is also marked unavailable; both pauses must be removed.' : ''} Existing bookings remain scheduled. Customers can still send preferred-time requests for your review.</Text></View>}
+        <View style={[styles.actionBar, { flexWrap: 'wrap' }]}><Button secondary title={isOff ? (weeklyPaused ? 'Remove date pause' : 'Resume this date') : 'Mark date unavailable'} disabled={blocked || !futureDay} onPress={() => save(() => providerService.toggleOffDate(selected, !isOff, calendar.version))} /><Button title="Add availability" disabled={blocked || !open || !futureDay} onPress={() => { setTime(''); setError(''); setSheet(true); }} /></View>
+        {!futureDay && <Text style={styles.note}>Select today or a date within the next 90 days to publish appointments.</Text>}
+        {reservations.map(b => <Pressable key={b.id} accessibilityRole="button" onPress={() => navigation.navigate('Requests', { bookingId: b.id, openRequest: Date.now() })} style={[styles.slot, { borderLeftColor: COLORS.primary }]}><View style={styles.slotTime}><Text style={styles.slotStart}>{bookingTime(b.startsAt)}</Text><Text style={styles.slotEnd}>{bookingTime(new Date(new Date(b.startsAt).getTime() + b.durationMinutes * 60000))}</Text></View><View style={styles.slotBody}><Text style={styles.slotTitle}>{b.service}</Text><Text style={styles.slotSub}>{b.customerName}</Text><Text style={styles.slotSub}>{b.scheduleConfirmed ? 'Booked' : 'Reserved · request pending'} · {b.bufferMinutes} min travel</Text><Text style={styles.workTextOn}>View job</Text></View></Pressable>)}
+        {published.map(slot => <View key={slot.startsAt} style={[styles.slot, { borderLeftColor: slot.available ? '#0F8A5F' : '#777', flexWrap: 'wrap' }]}><View style={styles.slotTime}><Text style={styles.slotStart}>{bookingTime(slot.startsAt)}</Text><Text style={styles.slotEnd}>{calendar.durationMinutes} min</Text></View><View style={styles.slotBody}><Text style={styles.slotTitle}>{slot.reserved ? 'Blocked by booking / travel' : slot.paused ? 'Publication paused' : slot.available ? 'Open for bookings' : 'Outside booking window'}</Text><Text style={styles.slotSub}>{calendar.bufferMinutes} min travel buffer</Text>{!slot.reserved && new Date(slot.startsAt) > new Date() && <Button secondary title="Withdraw appointment" disabled={busy} onPress={() => setWithdraw(slot.startsAt)} />}{withdraw === slot.startsAt && <><Text style={styles.note}>Remove this published start from customer selection?</Text><Button title="Confirm withdrawal" disabled={blocked} onPress={() => save(() => bookingService.removeSlot(slot.startsAt), () => setWithdraw(null))} /><Button secondary title="Keep appointment" disabled={busy} onPress={() => setWithdraw(null)} /></>}</View></View>)}
+        {!reservations.length && !published.length && <View style={styles.empty}><MaterialCommunityIcons name="calendar-blank-outline" size={28} color={COLORS.primary} /><Text style={styles.emptyTitle}>No appointments published</Text><Text style={styles.emptyText}>Publish a specific start time for customers to select. An empty day does not mean all-day availability.</Text></View>}
+        {!!legacy.length && <View style={styles.card}><Text style={styles.dayTitle}>Previous calendar intervals</Text><Text style={styles.note}>Preserved for reference, not published appointments. Choose explicit starts using Add availability. No interval has been converted or deleted.</Text>{legacy.map((s, i) => <Text key={s._id || i} style={styles.note}>{s.title} · {Math.floor(s.start / 60)}:{String(s.start % 60).padStart(2, '0')}–{Math.floor(s.end / 60)}:{String(s.end % 60).padStart(2, '0')} · Legacy {s.type}</Text>)}</View>}
+        <ScheduleSettings calendar={calendar} busy={blocked} save={save} />
+      </>}
+    </ScrollView>
+    <Modal visible={sheet} transparent animationType="slide" onRequestClose={close}><View style={styles.sheetRoot}><Pressable accessibilityRole="button" accessibilityLabel="Close availability editor" style={styles.backdrop} onPress={close} /><View style={[styles.sheet, { maxHeight: '88%', paddingBottom: insets.bottom + 16 }]}><ScrollView keyboardShouldPersistTaps="handled"><Text accessibilityRole="header" style={styles.sheetTitle}>Add availability</Text><Text style={styles.note}>{bookingDate(stamp(selected))} · Sri Lanka time</Text><Text style={styles.note}>Publish one appointment start. Service: {calendar?.durationMinutes} min · travel: {calendar?.bufferMinutes} min. Times blocked by a booking or its travel buffer cannot be selected. Publishing lets customers request this appointment; you still review each request.</Text><View style={styles.chipWrap}>{BOOKING_TIMES.map(t => { const start = at(selected, t), reason = timeReason(t); const disabled = blocked || !open || !!reason; return <Pressable key={t} accessibilityRole="button" accessibilityState={{ selected: t === time, disabled: !!disabled }} disabled={disabled} onPress={() => setTime(t)} style={[styles.optChip, t === time && styles.optChipActive, disabled && { opacity: 0.4 }]}><Text style={[styles.optText, t === time && styles.optTextActive]}>{bookingTime(start)}{reason ? ' · ' + reason : ''}</Text></Pressable>; })}</View>{!!time && <Text accessibilityLiveRegion="polite" style={styles.note}>{timeReason(time) || ('Selected: ' + bookingTime(at(selected, time)) + '–' + bookingTime(new Date(Date.parse(at(selected, time)) + calendar.durationMinutes * 60000)) + ' · Travel buffer until ' + bookingTime(new Date(Date.parse(at(selected, time)) + (calendar.durationMinutes + calendar.bufferMinutes) * 60000)))}</Text>}{!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}{needsRefresh && <Button secondary title="Refresh calendar" disabled={busy || loading} onPress={() => load()} />}<Button title={busy ? 'Publishing…' : 'Publish appointment'} disabled={blocked || !time || !open || !!timeReason(time)} onPress={() => save(() => bookingService.publishSlot(at(selected, time)), () => setSheet(false))} /><Button secondary title="Close editor" disabled={busy} onPress={close} /></ScrollView></View></View></Modal>
+  </View>;
 };
+
 
 const styles = StyleSheet.create({
+  control: { minHeight: 48, backgroundColor: COLORS.primary, padding: 12, borderRadius: 13, marginVertical: 6, justifyContent: 'center', alignItems: 'center' },
+  controlSecondary: { backgroundColor: '#FFF', borderWidth: 1, borderColor: COLORS.inputBorder },
+  controlText: { color: '#FFF', fontSize: 14, fontWeight: '700', textAlign: 'center', flexShrink: 1 },
+  input: { borderWidth: 1, borderColor: COLORS.inputBorder, borderRadius: 12, minHeight: 48, padding: 12, marginVertical: 10, color: COLORS.textPrimary, fontSize: 16 },
+  note: { color: COLORS.textMuted, fontSize: 14, lineHeight: 21, marginVertical: 10 },
+  error: { color: '#B52636', fontSize: 14, lineHeight: 21, marginVertical: 10 },
   screen: { flex: 1, backgroundColor: COLORS.background },
   centerLoading: { flex: 1, justifyContent: "center", alignItems: "center" },
   loadingText: { marginTop: 12, fontSize: 14, color: COLORS.textMuted, fontWeight: "600" },
 
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 20 },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 20, width: "100%", maxWidth: 760, alignSelf: "center" },
   pressed: { opacity: 0.85 },
 
   card: {
@@ -577,8 +137,8 @@ const styles = StyleSheet.create({
   // Week
   weekHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   navBtn: {
-    width: 34,
-    height: 34,
+    width: 48,
+    height: 48,
     borderRadius: 10,
     backgroundColor: "#F1F2F6",
     alignItems: "center",
@@ -587,7 +147,8 @@ const styles = StyleSheet.create({
   weekText: { fontSize: 15, fontWeight: "800", color: COLORS.textPrimary },
   daysRow: { flexDirection: "row", gap: 6, marginTop: 16 },
   dayPill: {
-    flex: 1,
+    minWidth: 48,
+    paddingHorizontal: 8,
     alignItems: "center",
     paddingVertical: 10,
     borderRadius: 14,
@@ -601,7 +162,8 @@ const styles = StyleSheet.create({
   dayDot: { width: 6, height: 6, borderRadius: 3, marginTop: 6 },
   legend: {
     flexDirection: "row",
-    gap: 18,
+    gap: 12,
+    flexWrap: "wrap",
     marginTop: 16,
     paddingTop: 14,
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -615,7 +177,7 @@ const styles = StyleSheet.create({
   workRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 },
   workChip: {
     paddingHorizontal: 14,
-    height: 38,
+    minHeight: 48,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: COLORS.inputBorder,
@@ -630,6 +192,8 @@ const styles = StyleSheet.create({
   // Day list
   dayHeader: {
     flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
     alignItems: "baseline",
     justifyContent: "space-between",
     marginTop: 22,
@@ -742,7 +306,7 @@ const styles = StyleSheet.create({
   chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   optChip: {
     paddingHorizontal: 12,
-    height: 38,
+    minHeight: 48,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: COLORS.inputBorder,

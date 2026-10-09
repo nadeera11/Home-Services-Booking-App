@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -6,31 +6,17 @@ import {
   TouchableOpacity,
   ScrollView,
   StatusBar,
+  ActivityIndicator,
+  RefreshControl,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
 import { COLORS } from "../../constants/theme";
 import { useAuth } from "../../context/AuthContext";
+import adminService from "../../services/adminService";
 import StatCard from "../../components/admin/StatCard";
 import TaskCard from "../../components/admin/TaskCard";
-
-// ---------------------------------------------------------------------------
-// Placeholder data. Replace with a call to adminService once the backend
-// exposes a dashboard summary endpoint.
-// ---------------------------------------------------------------------------
-const SUMMARY = {
-  totalCustomers: 12480,
-  customersGrowth: 4.2,
-  serviceProviders: 1946,
-  providersGrowth: 2.8,
-  activeBookings: 624,
-  bookingsToday: 18,
-  verifiedProviders: 1712,
-  pendingVerifications: 38,
-  newApplicationsToday: 12,
-  openComplaints: 17,
-  highPriorityComplaints: 5,
-};
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const MONTHS = [
@@ -48,17 +34,51 @@ const getGreeting = (d) => {
   return "Good evening";
 };
 
-const formatNumber = (n) => n.toLocaleString("en-US");
+const formatNumber = (n) => (n || 0).toLocaleString("en-US");
 
 const AdminDashboard = ({ navigation }) => {
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
 
+  const [stats, setStats] = useState({
+    totalCustomers: 0,
+    serviceProviders: 0,
+    verifiedProviders: 0,
+    pendingVerifications: 0,
+    newApplicationsToday: 0,
+    activeBookings: 0,
+    bookingsToday: 0,
+    openComplaints: 0,
+  });
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchStats = async (isRefreshing = false) => {
+    try {
+      if (isRefreshing) setRefreshing(true);
+      else setLoading(true);
+
+      const data = await adminService.getDashboardStats();
+      setStats(data);
+    } catch (error) {
+      console.error("Fetch Admin Dashboard Stats Error:", error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchStats();
+    }, [])
+  );
+
   const now = useMemo(() => new Date(), []);
   const firstName = (user?.name || "Admin").trim().split(/\s+/)[0];
-  const verifiedPercent = Math.round(
-    (SUMMARY.verifiedProviders / SUMMARY.serviceProviders) * 100
-  );
+  const verifiedPercent = stats.serviceProviders > 0
+    ? Math.round((stats.verifiedProviders / stats.serviceProviders) * 100)
+    : 0;
 
   return (
     <View style={styles.screen}>
@@ -85,7 +105,7 @@ const AdminDashboard = ({ navigation }) => {
         </View>
 
         <Text style={styles.attention}>
-          {SUMMARY.pendingVerifications} applications and {SUMMARY.openComplaints}{" "}
+          {stats.pendingVerifications} applications and {stats.openComplaints}{" "}
           complaints need your attention today.
         </Text>
 
@@ -114,6 +134,13 @@ const AdminDashboard = ({ navigation }) => {
         style={styles.scroll}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => fetchStats(true)}
+            colors={[COLORS.primary]}
+          />
+        }
       >
         <View style={styles.body}>
           {/* Platform overview */}
@@ -129,53 +156,59 @@ const AdminDashboard = ({ navigation }) => {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.grid}>
-            <StatCard
-              label="Total customers"
-              value={formatNumber(SUMMARY.totalCustomers)}
-              trend={`${SUMMARY.customersGrowth}% this month`}
-              trendUp
-            />
-            <StatCard
-              label="Service providers"
-              value={formatNumber(SUMMARY.serviceProviders)}
-              trend={`${SUMMARY.providersGrowth}% this month`}
-              trendUp
-            />
-            <StatCard
-              label="Active bookings"
-              value={formatNumber(SUMMARY.activeBookings)}
-              trend={`${SUMMARY.bookingsToday} today`}
-              trendUp
-            />
-            <StatCard
-              label="Verified providers"
-              value={formatNumber(SUMMARY.verifiedProviders)}
-              trend={`${verifiedPercent}% of providers`}
-            />
-          </View>
+          {loading && !refreshing ? (
+            <ActivityIndicator size="large" color={COLORS.primary} style={{ marginVertical: 30 }} />
+          ) : (
+            <>
+              <View style={styles.grid}>
+                <StatCard
+                  label="Total customers"
+                  value={formatNumber(stats.totalCustomers)}
+                  trend="Registered users"
+                  trendUp
+                />
+                <StatCard
+                  label="Service providers"
+                  value={formatNumber(stats.serviceProviders)}
+                  trend="Registered pros"
+                  trendUp
+                />
+                <StatCard
+                  label="Active bookings"
+                  value={formatNumber(stats.activeBookings)}
+                  trend={`${stats.bookingsToday} new today`}
+                  trendUp
+                />
+                <StatCard
+                  label="Verified providers"
+                  value={formatNumber(stats.verifiedProviders)}
+                  trend={`${verifiedPercent}% of providers`}
+                />
+              </View>
 
-          {/* Urgent tasks */}
-          <Text style={[styles.sectionTitle, styles.urgentTitle]}>Urgent tasks</Text>
+              {/* Urgent tasks */}
+              <Text style={[styles.sectionTitle, styles.urgentTitle]}>Urgent tasks</Text>
 
-          <TaskCard
-            icon="check"
-            title="Pending verifications"
-            subtitle={`${SUMMARY.newApplicationsToday} new applications today`}
-            badge={String(SUMMARY.pendingVerifications)}
-            actionLabel="Review queue"
-            tone="purple"
-            onPress={() => navigation.navigate("Verification")}
-          />
-          <TaskCard
-            icon="exclamation-thick"
-            title="Open complaints"
-            subtitle={`${SUMMARY.highPriorityComplaints} marked high priority`}
-            badge={`${SUMMARY.openComplaints} cases`}
-            actionLabel="View complaints"
-            tone="red"
-            onPress={() => navigation.navigate("Complaints")}
-          />
+              <TaskCard
+                icon="check"
+                title="Pending verifications"
+                subtitle={`${stats.newApplicationsToday} new applications today`}
+                badge={String(stats.pendingVerifications)}
+                actionLabel="Review queue"
+                tone="purple"
+                onPress={() => navigation.navigate("Verification")}
+              />
+              <TaskCard
+                icon="exclamation-thick"
+                title="Open complaints"
+                subtitle="Customer & provider disputes"
+                badge={`${stats.openComplaints} cases`}
+                actionLabel="View complaints"
+                tone="red"
+                onPress={() => navigation.navigate("Complaints")}
+              />
+            </>
+          )}
         </View>
       </ScrollView>
     </View>

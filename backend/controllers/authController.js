@@ -7,6 +7,7 @@ const sanitizeUser = (user) => {
   return {
     id: user._id,
     name: user.name,
+    avatar: user.avatar || "",
     email: user.email,
     phone: user.phone,
     role: user.role,
@@ -488,6 +489,22 @@ const updateProfile = async (req, res) => {
     }
 
     const updates = {};
+    if (req.body.avatar !== undefined) {
+      if (req.user.role !== 'provider') return res.status(403).json({ message: 'Provider profile photos only.' });
+      const photo = req.body.avatar;
+      if (typeof photo !== 'string' || photo.length > 1400000) return res.status(400).json({ message: 'Choose a JPEG or PNG photo under 1 MB.' });
+      if (photo) {
+        const match = /^data:image\/(jpeg|png);base64,([A-Za-z0-9+/]+={0,2})$/.exec(photo);
+        if (!match) return res.status(400).json({ message: 'Only JPEG and PNG photos are supported.' });
+        const bytes = Buffer.from(match[2], 'base64');
+        const valid = bytes.toString('base64') === match[2] && bytes.length <= 1024 * 1024 && (match[1] === 'png'
+          ? bytes.length >= 45 && bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')) && bytes.toString('ascii', 12, 16) === 'IHDR' && bytes.readUInt32BE(16) > 0 && bytes.readUInt32BE(20) > 0 && bytes.subarray(-8, -4).toString() === 'IEND'
+          : bytes.length >= 20 && bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255 && bytes[bytes.length - 2] === 255 && bytes[bytes.length - 1] === 217);
+        if (!valid) return res.status(400).json({ message: 'This photo is invalid or larger than 1 MB. Choose another JPEG or PNG.' });
+      }
+      updates.avatar = photo;
+    }
+
 
     if (req.user.role === "provider" && req.body.acceptingRequests !== undefined) {
       if (typeof req.body.acceptingRequests !== "boolean") {
@@ -503,7 +520,7 @@ const updateProfile = async (req, res) => {
         typeof value !== "string" ||
         !value.trim() ||
         value.trim().length > maxLength ||
-        (field === "phone" && !/^\+?[\d\s-]{7,18}$/.test(value.trim()))
+        (field === "phone" && (!/^\+?[\d\s-]{7,18}$/.test(value.trim()) || value.replace(/\D/g, "").length < 7))
       ) {
         return res.status(400).json({ message: "Enter a valid name and phone number." });
       }
