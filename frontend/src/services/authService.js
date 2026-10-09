@@ -64,7 +64,7 @@ export const authService = {
   // Helper to store session tokens securely
   saveSession: async (token, user) => {
     if (token) await setSecureItem("userToken", token);
-    if (user) await setSecureItem("userData", JSON.stringify(user));
+    if (user) await setSecureItem("userData", JSON.stringify({ ...user, avatar: undefined }));
   },
 
   // Clear session on logout

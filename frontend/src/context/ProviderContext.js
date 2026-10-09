@@ -6,11 +6,12 @@ import { providerMetrics } from '../constants/providerData';
 
 const ProviderContext = createContext(null);
 export const ProviderDataProvider = ({ children }) => {
-  const { user } = useAuth();
+  const { user, updateUserSession } = useAuth();
   const [online, setOnlineValue] = useState(user?.providerDetails?.acceptingRequests !== false);
   const [bookings, setBookings] = useState([]), [loading, setLoading] = useState(true), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [account, setAccount] = useState(user), [loaded, setLoaded] = useState(false), [asOf, setAsOf] = useState(() => new Date());
   const [notifications, setNotifications] = useState([]), [notificationError, setNotificationError] = useState(''), [notificationsLoading, setNotificationsLoading] = useState(false);
+  const profileRevision = useRef(0);
   const notificationRequest = useRef(null), notificationLock = useRef(false);
   const loadNotifications = useCallback(async () => {
     if (notificationLock.current) return;
@@ -32,7 +33,11 @@ export const ProviderDataProvider = ({ children }) => {
     if (lock.current) return;
     request.current?.abort(); const c = new AbortController(); request.current = c;
     if (!quiet) { setLoading(true); setError(''); }
-    try { const rows = await bookingService.list(c.signal); if (!c.signal.aborted) { setBookings(rows); setLoaded(true); setAsOf(new Date()); setError(''); } return rows; }
+    try { const rows = await bookingService.list(c.signal); if (!c.signal.aborted) {
+      setBookings(rows); setLoaded(true); setAsOf(new Date()); setError('');
+      const reviews = rows.filter(b => Number.isInteger(b.review?.rating) && b.review.rating >= 1 && b.review.rating <= 5);
+      if (reviews.length) setAccount(current => current ? { ...current, providerDetails: { ...current.providerDetails, rating: reviews.reduce((sum, b) => sum + b.review.rating, 0) / reviews.length, reviewCount: reviews.length } } : current);
+    } return rows; }
     catch (e) { if (!c.signal.aborted) setError(e.response?.data?.message || 'Unable to load jobs. Check your connection and retry.'); }
     finally { if (!c.signal.aborted) setLoading(false); }
   }, []);
@@ -40,8 +45,8 @@ export const ProviderDataProvider = ({ children }) => {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(); const timer = setInterval(() => load(true), 30000); return () => { clearInterval(timer); request.current?.abort(); }; }, [load]);
   useEffect(() => {
-    let active = true;
-    authService.getMe().then(result => { if (active) { setAccount(result.user); setOnlineValue(result.user?.providerDetails?.acceptingRequests !== false); } }).catch(() => {});
+    let active = true; const revision = profileRevision.current;
+    authService.getMe().then(result => { if (active && revision === profileRevision.current) { setAccount(result.user); setOnlineValue(result.user?.providerDetails?.acceptingRequests !== false); } }).catch(() => {});
     // Initial fetch shares the loading state used by the retry control.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadNotifications(); const timer = setInterval(loadNotifications, 30000);
@@ -62,7 +67,20 @@ export const ProviderDataProvider = ({ children }) => {
     finally { lock.current = false; setBusy(false); }
   }, []);
   const requests = useMemo(() => bookings.filter(b => ['pending', 'time_proposed'].includes(b.status)).map(b => ({ ...b, customer: b.customerName, description: b.problem, date: bookingDate(b.startsAt), time: bookingTime(b.startsAt), photos: 0 })), [bookings]);
-  const value = { account: account || user, loaded, metrics, notifications, notificationError, notificationsLoading, loadNotifications, markRead, online, setOnline, bookings, requests, loading, error, busy, load, update, onUpdate, acceptRequest: id => update(id, { action: 'confirm' }), rejectRequest: id => update(id, { action: 'reject' }), pendingCount: requests.length, urgentCount: 0 };
+  const saveProfile = async values => {
+    profileRevision.current++;
+    const updated = await authService.updateProfile(values);
+    setAccount(updated);
+    await updateUserSession(updated);
+    return updated;
+  };
+  const savePricing = async values => {
+    profileRevision.current++;
+    const pricing = await bookingService.savePricing(values);
+    setAccount(current => ({ ...(current || user), providerDetails: { ...(current || user)?.providerDetails, pricing } }));
+    return pricing;
+  };
+  const value = { savePricing, saveProfile, account: account || user, loaded, metrics, notifications, notificationError, notificationsLoading, loadNotifications, markRead, online, setOnline, bookings, requests, loading, error, busy, load, update, onUpdate, acceptRequest: id => update(id, { action: 'confirm' }), rejectRequest: id => update(id, { action: 'reject' }), pendingCount: requests.length, urgentCount: 0 };
   return <ProviderContext.Provider value={value}>{children}</ProviderContext.Provider>;
 };
 export const useProviderData = () => {

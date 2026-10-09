@@ -1,6 +1,7 @@
 import api from './api';
 
 export const bookingService = {
+  review: async (id, data) => (await api.post(`/bookings/${id}/review`, data)).data.booking,
   removeDay: async date => (await api.delete('/bookings/slots/day', { data: { date } })).data,
   messages: async (id, signal) => (await api.get(`/bookings/${id}/messages`, { signal })).data.messages,
   sendMessage: async (id, text, requestId) => (await api.post(`/bookings/${id}/messages`, { text, requestId })).data.messages,
@@ -31,5 +32,13 @@ export const bookingPrice = p => {
   if (price?.type === 'fixed') return money(price.amountMinor) + ' fixed';
   if (price?.type === 'estimate') return money(price.minMinor) + ' – ' + money(price.maxMinor) + ' estimate';
   if (price?.type === 'inspection') return money(price.inspectionFeeMinor) + ' inspection fee';
-  return 'Quote required · no charge agreed';
+  if (Number.isFinite(p.referencePrice)) return money(Math.round(p.referencePrice * 100)) + ' per ' + (p.priceUnit || 'visit') + ' · reference rate';
+  return 'Price not published · quote required';
+};
+
+export const pricingExplanation = p => {
+  if (p?.type === 'fixed') return 'Fixed total for the listed scope. Changes require your approval. No payment is taken when sending this request.';
+  if (p?.type === 'estimate') return 'This range is an estimate, not an agreed total. Approve the provider’s itemised quote before work begins.';
+  if (p?.type === 'inspection') return 'This fee covers the inspection only. Repairs need a separate quote and your approval. The completed inspection fee remains payable if you decline repairs.';
+  return 'The total is not agreed yet. Send a quote request; the provider must quote and get your approval before work begins. A reference rate, if shown, is not your booking total.';
 };

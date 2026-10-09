@@ -17,6 +17,7 @@ router.patch('/:id/notifications/:eventId/read', authorizeRoles('provider'), con
 router.get('/', authorizeRoles('customer', 'provider'), controller.list);
 router.get('/:id/messages', authorizeRoles('customer', 'provider'), controller.messages);
 router.post('/:id/messages', authorizeRoles('customer', 'provider'), controller.sendMessage);
+router.post('/:id/review', authorizeRoles('customer'), controller.review);
 router.post('/', authorizeRoles('customer'), controller.create);
 router.patch('/:id', authorizeRoles('customer', 'provider'), controller.update);
 module.exports = router;

@@ -29,76 +29,6 @@ const getInitials = (name = "") => {
   return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
 };
 
-// Default Contacts & Seed Messages matching reference UI
-const DEMO_CONTACTS = [
-  {
-    id: "demo-1",
-    name: "Jenny Wilson",
-    service: "House Cleaning",
-    unread: 2,
-    time: "13.29",
-    avatar: require("../../../assets/images/Home/Sanduni rathnayake.jpg"),
-    lastMessage: "I have booked your house cleaning service...",
-    initialMessages: [
-      { id: "m1", sender: "user", text: "Hi Jenny, good morning 😊", time: "10:00" },
-      { id: "m2", sender: "user", text: "I have booked your house cleaning service for December 23 at 10 AM 😊", time: "10:00" },
-      { id: "m3", sender: "other", text: "Hi, morning too Andrew!", time: "10:00" },
-      { id: "m4", sender: "other", text: "Yes, I have received your order. I will come on that date! 😁😁", time: "10:00" },
-      { id: "m5", sender: "user", text: "Good, thanks Jenny...", time: "10:01" },
-      {
-        id: "m6",
-        sender: "user",
-        text: "Here I send a photo of room & my house 😁",
-        time: "10:01",
-        images: [
-          require("../../../assets/images/Home/full home deep clean.jpg"),
-          require("../../../assets/images/Home/Single room painting.jpg"),
-        ],
-      },
-    ],
-  },
-  {
-    id: "demo-2",
-    name: "Alfonzo Schuessler",
-    service: "Floor Cleaning",
-    unread: 3,
-    time: "10:48",
-    avatar: require("../../../assets/images/Home/Arjun perera.jpg"),
-    lastMessage: "I just finished it 😂😂",
-    initialMessages: [
-      { id: "a1", sender: "other", text: "Hi! I am arriving in 10 minutes.", time: "10:30" },
-      { id: "a2", sender: "user", text: "Awesome, the front door is unlocked!", time: "10:32" },
-      { id: "a3", sender: "other", text: "I just finished it 😂😂", time: "10:48" },
-    ],
-  },
-  {
-    id: "demo-3",
-    name: "Benny Spanbauer",
-    service: "Plumbing Service",
-    unread: 0,
-    time: "09.25",
-    avatar: require("../../../assets/images/Home/Leaking tap repair.jpg"),
-    lastMessage: "omg, this is amazing 🔥🔥🔥",
-    initialMessages: [
-      { id: "b1", sender: "other", text: "Fixed the tap leak under the kitchen sink!", time: "09:20" },
-      { id: "b2", sender: "user", text: "omg, this is amazing 🔥🔥🔥", time: "09:25" },
-    ],
-  },
-  {
-    id: "demo-4",
-    name: "Kylee Danford",
-    service: "Painting",
-    unread: 0,
-    time: "Dec 20",
-    avatar: require("../../../assets/images/Home/Single room painting.jpg"),
-    lastMessage: "just ideas for next time 😆",
-    initialMessages: [
-      { id: "k1", sender: "other", text: "Check out the color swatch for the living room.", time: "Dec 20" },
-      { id: "k2", sender: "user", text: "just ideas for next time 😆", time: "Dec 20" },
-    ],
-  },
-];
-
 export default function MessagesScreen({
   embedded = false,
   route,
@@ -313,19 +243,25 @@ export default function MessagesScreen({
     }
   };
 
-  // Combine real backend conversations & demo contacts
+  // One entry per account, keeping the most recent activity first.
+  const seenPeople = new Set();
+  const conversationJobs = jobs.filter(b => {
+    const personId = (user.role === 'provider' ? b.customerId : b.providerId) || b.id;
+    if (seenPeople.has(personId)) return false;
+    seenPeople.add(personId); return true;
+  });
   const allConversations = [
-    ...jobs.map((b) => ({
+    ...conversationJobs.map((b) => ({
       id: b.id,
       name: user.role === "provider" ? b.customerName : b.providerName,
       service: b.service,
-      lastMessage: b.lastMessage?.text || "Tap to chat about this booking",
+      lastMessage: b.lastMessage?.text || "Tap to open conversation",
       time: b.lastMessage ? bookingWhen(b.lastMessage.createdAt) : "New",
       unread: 0,
-      avatar: null,
+      avatar: user.role === 'customer' && b.providerAvatar ? { uri: b.providerAvatar } : null,
       isBackendBooking: true,
     })),
-    ...DEMO_CONTACTS,
+
   ];
 
   const filteredConversations = searchQuery.trim()
@@ -484,7 +420,7 @@ export default function MessagesScreen({
                 {/* Date separator badge */}
                 <View style={styles.dateBadgeContainer}>
                   <View style={styles.dateBadge}>
-                    <Text style={styles.dateBadgeText}>Today</Text>
+                    <Text style={styles.dateBadgeText}>Conversation history</Text>
                   </View>
                 </View>
 
@@ -593,7 +529,8 @@ export default function MessagesScreen({
 
           <ScrollView contentContainerStyle={{ padding: 20 }}>
             <Text style={{ fontSize: 16, fontWeight: "800", marginBottom: 14 }}>Select Contact</Text>
-            {DEMO_CONTACTS.map((c) => (
+            {!allConversations.length && <Text>Contacts appear after you have a booking with a provider.</Text>}
+            {allConversations.map((c) => (
               <TouchableOpacity
                 key={c.id}
                 style={styles.conversationItem}
@@ -602,7 +539,7 @@ export default function MessagesScreen({
                   openConversation(c);
                 }}
               >
-                <Image source={c.avatar} style={styles.avatarImage} />
+                {c.avatar ? <Image source={c.avatar} style={styles.avatarImage} /> : <Text>{getInitials(c.name)}</Text>}
                 <View style={styles.chatInfo}>
                   <Text style={styles.chatName}>{c.name}</Text>
                   <Text style={styles.chatPreview}>{c.service}</Text>

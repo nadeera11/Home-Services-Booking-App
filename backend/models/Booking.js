@@ -22,6 +22,7 @@ const schema = new mongoose.Schema({
   priceUnit: { type: String, default: 'visit' },
   pricing: { type: mongoose.Schema.Types.Mixed, default: null },
   quote: { type: mongoose.Schema.Types.Mixed, default: null },
+  review: { type: new mongoose.Schema({ rating: { type: Number, min: 1, max: 5, required: true }, comment: { type: String, maxlength: 1000, default: '' }, createdAt: { type: Date, required: true } }, { _id: false }), default: undefined },
   quoteHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
   quoteReturnStatus: String,
   history: { type: [mongoose.Schema.Types.Mixed], default: [] },

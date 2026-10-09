@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View, Image } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { bookingPrice } from '../../services/bookingService';
+import { bookingPrice, bookingDate, pricingExplanation } from '../../services/bookingService';
 import { BookingFlowModal } from './BookingsScreen';
 
 const purple = '#7047FA';
@@ -32,7 +32,7 @@ export default function ProviderProfileModal({ visible, provider: p, loading, er
       {!!shareError && <Text accessibilityRole="alert" style={styles.feedback}>{shareError}</Text>}
       {loading ? <View style={styles.state}><ActivityIndicator size="large" color={purple} /><Text style={styles.body}>Loading profile…</Text></View> : error ? <View style={styles.state}><Text accessibilityRole="alert" style={styles.body}>{error}</Text><Pressable onPress={onRetry} accessibilityRole="button" style={styles.button}><Text style={styles.buttonText}>Try again</Text></Pressable></View> : p && <ScrollView contentContainerStyle={[styles.content, { paddingBottom: Math.max(24, insets.bottom) }]}>
         <View style={[styles.card, styles.hero]}>
-          <View style={styles.avatar}><Text style={styles.initials}>{initials}</Text>{p.verified && <View style={styles.avatarBadge}><Icon name="check-decagram-outline" color="#FFF" size={18} /></View>}</View>
+          <View style={styles.avatar}><>{p.avatar ? <Image accessibilityLabel={p.name + " profile photo"} source={{ uri: p.avatar }} style={{ width: 78, height: 78, borderRadius: 40 }} /> : <Text style={styles.initials}>{initials}</Text>}</>{p.verified && <View style={styles.avatarBadge}><Icon name="check-decagram-outline" color="#FFF" size={18} /></View>}</View>
           <Text style={styles.name}>{p.name}</Text><Text style={styles.subtitle}>{p.category}</Text>
           {p.verified && <View style={styles.badge}><Icon name="shield-check" size={14} /><Text style={styles.badgeText}>Verified Provider</Text></View>}
           <View style={styles.stats}>
@@ -42,10 +42,10 @@ export default function ProviderProfileModal({ visible, provider: p, loading, er
           </View>
         </View>
         <Section title="About"><View style={styles.card}><Text style={styles.body}>{p.bio || 'This provider hasn’t added an introduction yet.'}</Text></View></Section>
-        <Section title="Services Offered" detail="1 service category"><View style={styles.grid}><View style={[styles.card, styles.serviceCard]}><View style={[styles.iconBox, styles.serviceIcon]}><Icon name="tools" /></View><Text style={styles.serviceTitle}>{p.category}</Text><Text style={styles.caption}>{bookingPrice(p)}</Text>{!!p.pricing?.inclusions && <Text style={styles.body}>Included: {p.pricing.inclusions}</Text>}{!!p.pricing?.exclusions && <Text style={styles.caption}>Excluded: {p.pricing.exclusions}</Text>}</View></View></Section>
+        <Section title="Services Offered" detail="1 service category"><View style={styles.grid}><View style={[styles.card, styles.serviceCard]}><View style={[styles.iconBox, styles.serviceIcon]}><Icon name="tools" /></View><Text style={styles.serviceTitle}>{p.category}</Text><Text style={styles.rowTitle}>{bookingPrice(p)}</Text><Text style={styles.body}>{pricingExplanation(p.pricing)}</Text>{!!p.pricing?.inclusions && <Text style={styles.body}>Included: {p.pricing.inclusions}</Text>}{!!p.pricing?.exclusions && <Text style={styles.caption}>Excluded: {p.pricing.exclusions}</Text>}</View></View></Section>
         <Section title="Qualifications"><View style={styles.card}><InfoRow icon="check-decagram-outline" title={p.qualifications || 'Qualifications not listed'} description={p.qualifications ? 'Provided by the professional' : 'No public qualification details added yet.'} /></View>{!!p.experience && <View style={[styles.card, styles.spaced]}><InfoRow icon="school-outline" title={p.experience + ' experience'} description="Professional experience" /></View>}</Section>
         <Section title="Verification"><View style={styles.card}><InfoRow icon={p.verified ? 'check' : 'shield-outline'} verified={p.verified} title={p.verified ? 'Provider Verified' : 'Verification not available'} description={p.verified ? 'Reviewed and approved by FixMate' : 'Verification details have not been provided.'} /></View></Section>
-        <Section title="Ratings & Reviews" detail={p.rating == null ? 'No ratings yet' : '★ ' + p.rating.toFixed(1) + ' (' + p.reviewCount + ')'}><View style={styles.card}><Text style={styles.body}>{p.reviewCount > 0 ? 'Written reviews are not available yet.' : 'No customer reviews yet. Reviews will appear here when available.'}</Text></View></Section>
+        <Section title="Ratings & Reviews" detail={p.rating == null ? 'No ratings yet' : '★ ' + p.rating.toFixed(1) + ' (' + p.reviewCount + ')'}>{p.reviews?.length ? <>{p.reviews.map((review, i) => <View key={review.createdAt + '-' + i} style={[styles.card, styles.spaced]}><Text style={styles.rowTitle}>{review.customerName} · {review.rating} out of 5 stars</Text><Text style={styles.caption}>{bookingDate(review.createdAt)} · Verified booking</Text>{!!review.comment && <Text style={styles.body}>{review.comment}</Text>}<Text style={styles.caption}>{review.service}</Text></View>)}<Text style={styles.caption}>Showing the latest {p.reviews.length} reviews.</Text></> : <View style={styles.card}><Text style={styles.body}>No written reviews yet. After a completed service, customers can leave a review from My Bookings.</Text></View>}</Section>
         <View style={styles.actionArea}><Pressable disabled={p.acceptingRequests === false} onPress={() => setShowAvailability(value => !value)} accessibilityRole="button" accessibilityState={{ disabled: p.acceptingRequests === false, expanded: showAvailability }} style={[styles.button, p.acceptingRequests === false && { opacity: 0.5 }]}><Text style={styles.buttonText}>Continue with Provider</Text><Icon name="arrow-right" color="#FFF" size={20} /></Pressable><Text style={styles.actionCaption}>{p.acceptingRequests === false ? "This provider has paused new requests. Please choose another provider." : "No immediate charge"}</Text></View>
       </ScrollView>}
     </View>

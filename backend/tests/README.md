@@ -63,3 +63,58 @@ deletes only that isolated database on completion. It never alters live accounts
 or bookings. It covers authenticated HTTP routes, ownership, concurrent slot
 claims, validation, replay, reschedule conflict, cancellation and provider status
 transitions. Requires MongoDB permission to create and remove that test database.
+
+
+## Provider edit profile
+
+Provider Profile > Edit uses the existing authenticated PATCH /api/auth/profile.
+Editable fields: name, phone, bio, service area, experience and profile photo.
+Email, verified category/credentials, approval, ratings, pricing and bookings are
+not editable through this form. Photos use an optional User.avatar data URI,
+following the existing database-backed image pattern. JPEG/PNG only, maximum
+1 MiB decoded; both client and server validate input. Text and photo are saved
+atomically in one user update. Empty avatar removes a photo. Existing users need
+no migration. Deploy/restart the backend before using the new editor.
+
+Provider profile/dashboard update from the successful response immediately.
+Customer directory/profile reads include the current avatar; Explore refreshes
+on focus and every 15 seconds while focused. An open public profile refreshes
+every 15 seconds. Booking reads and mutation responses resolve the current public
+provider name/photo without modifying historical booking snapshots. This is
+refresh-based synchronization, not push delivery. No new packages are required.
+Profile photos are excluded from the local userData session cache to avoid
+SecureStore size limits; session restoration gets the saved photo from /auth/me.
+
+Run from backend (PowerShell):
+
+```powershell
+$env:RUN_PROFILE_INTEGRATION='1'
+node --test tests/provider-profile.test.js tests/providers.test.js
+```
+
+For browser-to-real-API coverage, start Expo web on port 8093, point
+PLAYWRIGHT_PATH to an existing Playwright installation, and set PROFILE_BROWSER=1.
+The test uses a random fixmate_profile_test_* database and deletes only that
+isolated database in its cleanup. It covers persistence, invalid/oversized files,
+permissions, duplicate phone, live public/booking identity, preview-before-save,
+failed-save recovery, narrow layout, session reload and the customer profile.
+Native-device picker/permission dialogs still require physical-device testing.
+
+Pricing and booking reviews:
+
+```powershell
+node --test tests/reviews-pricing.test.js tests/providers.test.js
+$env:RUN_REVIEW_INTEGRATION='1'
+node --test tests/reviews-pricing.test.js
+```
+
+The integration test uses a random `fixmate_review_test_*` database and removes
+only that database afterward. It covers review ownership, completed-booking
+eligibility, invalid/stale submissions, concurrent duplicates, aggregate ratings,
+public review privacy, and fixed/estimated/inspection pricing. Atlas must be reachable.
+
+For the browser fixture test, start Expo web on port 8093, set `PLAYWRIGHT_PATH`
+to an existing Playwright installation, then run
+`node tests/reviews-pricing-browser.cjs` from `frontend`. It checks the actual UI
+for provider price publication, review recovery, public reviews, reference prices,
+and booking consent. Its intercepted API fixtures do not prove database persistence.

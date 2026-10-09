@@ -37,7 +37,7 @@ const initials = name => (name || '').trim().split(/\s+/).slice(0, 2).map(part =
 const priceText = bookingPrice;
 
 function getProviderPhoto(p) {
-  if (p.avatar) return { uri: p.avatar };
+  if (Object.prototype.hasOwnProperty.call(p, 'avatar')) return p.avatar ? { uri: p.avatar } : null;
   if (p.name && PROVIDER_PHOTOS[p.name]) return PROVIDER_PHOTOS[p.name];
   if (p.category && PROVIDER_PHOTOS[p.category]) return PROVIDER_PHOTOS[p.category];
   return null;
@@ -207,6 +207,19 @@ export default function ExploreScreen({ navigation, route }) {
       profileRequest.current?.abort();
     };
   }, [load]);
+
+  useFocusEffect(useCallback(() => {
+    void load(); const timer = setInterval(load, 15000);
+    return () => { clearInterval(timer); listRequest.current?.abort(); };
+  }, [load]));
+  useEffect(() => {
+    if (sheet !== 'profile' || !profileId) return;
+    const controller = new AbortController();
+    const timer = setInterval(() => {
+      getProvider(profileId, controller.signal).then(result => { if (!controller.signal.aborted) setProfile(result); }).catch(() => {});
+    }, 15000);
+    return () => { clearInterval(timer); controller.abort(); };
+  }, [sheet, profileId]);
 
   const categories = useMemo(() => [
     ...CATEGORIES,

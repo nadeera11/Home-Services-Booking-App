@@ -26,7 +26,11 @@ function validSlot(value, now = Date.now()) {
   return Number.isFinite(stamp) && date.toISOString().replace('.000Z', 'Z') === value.replace('.000Z', 'Z') && stamp > now && stamp < now + 90 * 86400000 && TIMES.includes(new Date(stamp + 19800000).toISOString().slice(11, 16));
 }
 function dto(b) {
-  return { version: b.__v, lastMessage: b.messages?.length ? b.messages[b.messages.length - 1] : null, id: String(b._id), reference: `FM-${new Date(b.createdAt).getUTCFullYear()}-${String(b._id).toUpperCase()}`, providerId: String(b.provider), providerName: b.providerName, customerName: b.customerName, service: b.service, startsAt: b.startsAt, scheduleMode: b.scheduleMode || "published", windowEnd: b.windowEnd, scheduleConfirmed: b.scheduleConfirmed, proposedStartsAt: b.proposedStartsAt, proposalVersion: b.proposalVersion, durationMinutes: b.durationMinutes ?? 60, bufferMinutes: b.bufferMinutes ?? 30, problem: b.problem, location: b.location, notes: b.notes, price: b.price, priceUnit: b.priceUnit, pricing: b.pricing, quote: b.quote, previousApprovedQuote: [...(b.quoteHistory || [])].reverse().find(q => q?.status === 'accepted') || null, invoice: b.invoice, payment: b.payment, inspectionPerformed: b.inspectionPerformed, history: b.history || [], updatedAt: b.updatedAt, status: b.status, createdAt: b.createdAt };
+  return { review: b.review || null, version: b.__v, lastMessage: b.messages?.length ? b.messages[b.messages.length - 1] : null, id: String(b._id), reference: `FM-${new Date(b.createdAt).getUTCFullYear()}-${String(b._id).toUpperCase()}`, providerId: String(b.provider), providerName: b.providerName, customerName: b.customerName, service: b.service, startsAt: b.startsAt, scheduleMode: b.scheduleMode || "published", windowEnd: b.windowEnd, scheduleConfirmed: b.scheduleConfirmed, proposedStartsAt: b.proposedStartsAt, proposalVersion: b.proposalVersion, durationMinutes: b.durationMinutes ?? 60, bufferMinutes: b.bufferMinutes ?? 30, problem: b.problem, location: b.location, notes: b.notes, price: b.price, priceUnit: b.priceUnit, pricing: b.pricing, quote: b.quote, previousApprovedQuote: [...(b.quoteHistory || [])].reverse().find(q => q?.status === 'accepted') || null, invoice: b.invoice, payment: b.payment, inspectionPerformed: b.inspectionPerformed, history: b.history || [], updatedAt: b.updatedAt, status: b.status, createdAt: b.createdAt };
+}
+async function currentDto(b, User = require('../models/User')) {
+  const p = await User.findById(b.provider).select('name avatar').lean();
+  return { ...dto(b), providerName: p?.name || b.providerName, providerAvatar: p?.avatar || '' };
 }
 function createBookingController(Booking, User) {
   const providerFields = 'name providerDetails.acceptingRequests providerDetails.category providerDetails.price providerDetails.priceUnit providerDetails.pricing providerDetails.bookingSlots providerDetails.appointmentDurationMinutes providerDetails.travelBufferMinutes providerDetails.serviceArea providerDetails.latitude providerDetails.longitude providerDetails.rating providerDetails.reviewCount';
@@ -42,6 +46,10 @@ function createBookingController(Booking, User) {
   }
   const ownProvider = req => req.user.role === 'provider' && req.user.isVerified && req.user.isApprovedByAdmin && req.user.providerDetails?.approvalStatus === 'approved';
   const handle = fn => async (req, res) => { try { await fn(req, res); } catch (error) { if (error.httpStatus) return res.status(error.httpStatus).json({ message: error.message }); if (error.code === 11000) return res.status(409).json({ message: 'That appointment is no longer available. Please choose another time.' }); return res.status(503).json({ message: 'Booking service is temporarily unavailable. Please try again.' }); } };
+  async function conversationMessages(booking) {
+    const rows = await Booking.find({ customer: booking.customer, provider: booking.provider }).select('messages').lean();
+    return rows.flatMap(b => (b.messages || []).map(m => ({ ...m, id: String(b._id) + ':' + m.id }))).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt) || a.id.localeCompare(b.id));
+  }
   async function calendarView(id) {
     const p = await User.findById(id).select('providerDetails').lean();
     const calendar = await Availability.calendarFor(id), settings = scheduleSettings(p);
@@ -102,20 +110,20 @@ function createBookingController(Booking, User) {
     }),
     messages: handle(async (req, res) => {
       if (!idOK(req.params.id)) return res.status(400).json({ message: 'Invalid booking.' });
-      const b = await Booking.findOne({ _id: req.params.id, [req.user.role === 'provider' ? 'provider' : 'customer']: req.user._id }).select('messages').lean();
+      const b = await Booking.findOne({ _id: req.params.id, [req.user.role === 'provider' ? 'provider' : 'customer']: req.user._id }).select('customer provider').lean();
       if (!b) return res.status(404).json({ message: 'Conversation unavailable.' });
-      res.json({ messages: b.messages || [] });
+      res.json({ messages: await conversationMessages(b) });
     }),
     sendMessage: handle(async (req, res) => {
       const { text, requestId } = req.body;
       if (!idOK(req.params.id) || !textOK(text, 2000) || typeof requestId !== 'string' || !/^[a-zA-Z0-9-]{12,100}$/.test(requestId)) return res.status(400).json({ message: 'Enter a message of up to 2,000 characters.' });
       const owner = { _id: req.params.id, [req.user.role === 'provider' ? 'provider' : 'customer']: req.user._id };
-      const b = await Booking.findOne(owner).select('messages').lean();
+      const b = await Booking.findOne(owner).select('customer provider messages').lean();
       if (!b) return res.status(404).json({ message: 'Conversation unavailable.' });
       const message = { id: requestId, sender: String(req.user._id), text: text.trim(), createdAt: new Date() };
       await Booking.updateOne({ ...owner, 'messages.id': { $ne: requestId } }, { $push: { messages: message } });
-      const updated = await Booking.findOne(owner).select('messages').lean();
-      res.json({ messages: updated.messages || [] });
+      const updated = await Booking.findOne(owner).select('customer provider messages').lean();
+      res.json({ messages: await conversationMessages(updated) });
     }),
     availability: handle(async (req, res) => {
       if (!idOK(req.params.providerId)) return res.status(400).json({ message: 'Invalid provider.' });
@@ -126,7 +134,7 @@ function createBookingController(Booking, User) {
       const slots = (p.providerDetails?.bookingSlots || []).filter(s => Availability.isOpen(calendar, s) && new Date(s).getTime() > now && new Date(s).getTime() < now + 90 * 86400000);
       const rows = await reservations(p._id), settings = scheduleSettings(p);
       const excluded = idOK(req.query.excludeBookingId) && await Booking.exists({ _id: req.query.excludeBookingId, provider: p._id, ...(req.user.role === 'customer' ? { customer: req.user._id } : { provider: req.user._id }) });
-      res.json({ pricing: publicPricing(p.providerDetails.pricing), ...settings, timezone: 'Asia/Colombo', slots: slots.map(s => ({ startsAt: new Date(s).toISOString(), date: dayKey(s), available: (req.user.role === 'provider' || p.providerDetails.acceptingRequests !== false) && !rows.some(b => !(excluded && String(b._id) === req.query.excludeBookingId) && overlaps(s, settings.durationMinutes, settings.bufferMinutes, b)) })).sort((a, b) => a.startsAt.localeCompare(b.startsAt)) });
+      res.json({ referencePrice: !p.providerDetails.pricing ? p.providerDetails.price ?? null : null, priceUnit: p.providerDetails.priceUnit || 'visit', pricing: publicPricing(p.providerDetails.pricing), ...settings, timezone: 'Asia/Colombo', slots: slots.map(s => ({ startsAt: new Date(s).toISOString(), date: dayKey(s), available: (req.user.role === 'provider' || p.providerDetails.acceptingRequests !== false) && !rows.some(b => !(excluded && String(b._id) === req.query.excludeBookingId) && overlaps(s, settings.durationMinutes, settings.bufferMinutes, b)) })).sort((a, b) => a.startsAt.localeCompare(b.startsAt)) });
     }),
     alternatives: handle(async (req, res) => {
       if (!idOK(req.params.providerId) || !validSlot(req.query.startsAt)) return res.status(400).json({ message: 'Choose a future preferred time.' });
@@ -142,7 +150,7 @@ function createBookingController(Booking, User) {
       const { providerId, startsAt, problem, location, notes = '', requestId, scheduleMode = 'published', windowEnd } = req.body || {};
       if (!idOK(providerId) || !textOK(requestId, 100) || !textOK(problem, 2000) || !textOK(location, 500) || !textOK(notes, 1000, false)) return res.status(400).json({ message: 'Enter a valid provider, problem description and service location.' });
       const existing = await Booking.findOne({ customer: req.user._id, requestId });
-      if (existing) return res.json({ booking: dto(existing) });
+      if (existing) return res.json({ booking: await currentDto(existing, User) });
       if (!validPreference(startsAt, scheduleMode, windowEnd)) return res.status(400).json({ message: 'Choose a future time or a valid same-day window within the next 90 days.' });
       const p = await approvedProvider(providerId);
       if (p?.providerDetails.acceptingRequests === false) return res.status(409).json({ message: 'This provider paused new requests. Choose another provider or try later.' });
@@ -163,13 +171,40 @@ function createBookingController(Booking, User) {
         }
         [booking] = await Booking.create([{ history: [{ status: 'pending', action: 'request', at: new Date() }], providerNotifications: [event('request', 'New booking request')], pricing, quote, ...settings, scheduleMode, windowEnd, scheduleConfirmed: false, customer: req.user._id, customerName: req.user.name, provider: p._id, providerName: p.name, service: p.providerDetails.category || 'Service', startsAt, problem: problem.trim(), location: location.trim(), notes: notes.trim(), price: p.providerDetails.price ?? null, priceUnit: p.providerDetails.priceUnit || 'visit', requestId, ...(scheduleMode === 'published' ? { slotKey: `${p._id}:${new Date(startsAt).toISOString()}` } : {}) }], { session });
       }); }
-      catch (error) { if (error.code === 11000) { const replay = await Booking.findOne({ customer: req.user._id, requestId }); if (replay) return res.json({ booking: dto(replay) }); } throw error; }
-      res.status(201).json({ booking: dto(booking) });
+      catch (error) { if (error.code === 11000) { const replay = await Booking.findOne({ customer: req.user._id, requestId }); if (replay) return res.json({ booking: await currentDto(replay, User) }); } throw error; }
+      res.status(201).json({ booking: await currentDto(booking, User) });
     }),
     list: handle(async (req, res) => {
       const query = req.user.role === 'provider' ? { provider: req.user._id } : { customer: req.user._id };
       const bookings = await Booking.find(query).sort({ startsAt: -1 }).lean();
-      res.json({ bookings: bookings.map(dto) });
+      const providers = await User.find({ _id: { $in: [...new Set(bookings.map(b => String(b.provider)))] } }).select('name avatar').lean();
+      const profiles = new Map(providers.map(p => [String(p._id), p]));
+      res.json({ bookings: bookings.map(b => { const p = profiles.get(String(b.provider)); return { ...dto(b), providerName: p?.name || b.providerName, providerAvatar: p?.avatar || '' }; }) });
+    }),
+    review: handle(async (req, res) => {
+      if (req.user.role !== 'customer') return res.status(403).json({ message: 'Only the booking customer can leave a review.' });
+      const { rating, comment = '', bookingVersion } = req.body || {};
+      if (!idOK(req.params.id) || !Number.isInteger(rating) || rating < 1 || rating > 5 || !textOK(comment, 1000, false) || !Number.isInteger(bookingVersion)) return res.status(400).json({ message: 'Choose 1–5 stars and a review of at most 1,000 characters.' });
+      const owner = { _id: req.params.id, customer: req.user._id };
+      const b = await Booking.findOne(owner);
+      if (!b) return res.status(404).json({ message: 'Booking not found.' });
+      if (b.status !== 'completed') return res.status(409).json({ message: 'You can review a service after the booking is completed.' });
+      if (b.review) {
+        if (b.review.rating === rating && b.review.comment === comment.trim()) return res.json({ booking: await currentDto(b, User) });
+        return res.status(409).json({ message: 'You already reviewed this booking. Refresh to see your saved review.' });
+      }
+      if (bookingVersion !== b.__v) return res.status(409).json({ message: 'This booking changed. Refresh its details before submitting your review. Your draft is kept.' });
+      let updated;
+      await User.db.transaction(async session => {
+        // Serialize reviews for the same provider before recalculating actual ratings.
+        const provider = await User.updateOne({ _id: b.provider }, { $inc: { 'providerDetails.reviewCount': 1 } }, { session });
+        if (!provider.matchedCount) throw conflict('This provider is no longer available.');
+        updated = await Booking.findOneAndUpdate({ ...owner, status: 'completed', __v: bookingVersion, review: { $exists: false } }, { $set: { review: { rating, comment: comment.trim(), createdAt: new Date() } }, $inc: { __v: 1 }, $push: { providerNotifications: event('review', 'Customer reviewed your completed service.') } }, { session, returnDocument: 'after', runValidators: true });
+        if (!updated) throw conflict('This booking changed or was already reviewed. Refresh to see the latest details.');
+        const [stats] = await Booking.aggregate([{ $match: { provider: b.provider, 'review.rating': { $exists: true } } }, { $group: { _id: null, rating: { $avg: '$review.rating' }, count: { $sum: 1 } } }]).session(session);
+        await User.updateOne({ _id: b.provider }, { $set: { 'providerDetails.rating': stats.rating, 'providerDetails.reviewCount': stats.count } }, { session });
+      });
+      res.status(201).json({ booking: await currentDto(updated, User) });
     }),
     update: handle(async (req, res) => {
       if (!idOK(req.params.id)) return res.status(400).json({ message: 'Invalid booking.' });
@@ -186,7 +221,7 @@ function createBookingController(Booking, User) {
       }
       let nextStatus, update, reservationStart, mustPublish = false;
       const fail = message => res.status(409).json({ message });
-      if (isProvider && action === 'confirm' && ['confirmed', 'awaiting_quote', 'inspection_confirmed'].includes(booking.status)) return res.json({ booking: dto(booking) });
+      if (isProvider && action === 'confirm' && ['confirmed', 'awaiting_quote', 'inspection_confirmed'].includes(booking.status)) return res.json({ booking: await currentDto(booking, User) });
       if (isProvider && action === 'propose_time') {
         if (!['pending', 'time_proposed'].includes(booking.status) || !validSlot(startsAt)) return fail('Choose a future alternative time for this request.');
         update = { $set: { status: 'time_proposed', proposedStartsAt: startsAt, proposalVersion: require('crypto').randomUUID() } };
@@ -261,7 +296,7 @@ function createBookingController(Booking, User) {
         updated = await write(session);
       }); else updated = await write();
       if (!updated) return res.status(409).json({ message: 'This booking changed. Refresh and try again.' });
-      res.json({ booking: dto(updated) });
+      res.json({ booking: await currentDto(updated, User) });
     }),
     notifications: handle(async (req, res) => {
       const rows = await Booking.find({ provider: req.user._id }).select('providerNotifications customerName service').lean();
@@ -323,4 +358,4 @@ function createBookingController(Booking, User) {
     }),
   };
 }
-module.exports = { event, createBookingController, validSlot, validPreference, overlaps, TIMES, dto };
+module.exports = { event, createBookingController, validSlot, validPreference, overlaps, TIMES, dto, currentDto };

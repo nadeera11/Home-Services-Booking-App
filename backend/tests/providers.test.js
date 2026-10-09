@@ -7,6 +7,7 @@ function response() { return { code: 200, status(code) { this.code = code; retur
 test("directory exposes public fields only, never credentials or verification documents", () => {
   const result = publicProvider(provider);
   assert.equal(result.price, null);
+  assert.equal(result.referencePrice, 2500);
   assert.equal(result.rating, null);
   assert.equal(result.latitude, null);
   assert.equal(result.verified, true);

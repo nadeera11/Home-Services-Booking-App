@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from "../../context/AuthContext";
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { bookingService, BOOKING_TIMES, bookingDate, bookingTime, bookingWhen, bookingPreference, bookingPrice, money } from '../../services/bookingService';
+import { bookingService, BOOKING_TIMES, bookingDate, bookingTime, bookingWhen, bookingPreference, bookingPrice, money, pricingExplanation } from '../../services/bookingService';
 import { complaintService } from '../../services/complaintService';
 import { paymentService } from '../../services/paymentService';
 import { COLORS } from '../../constants/theme';
@@ -40,7 +40,7 @@ const initials = name => (name || '').trim().split(/\s+/).slice(0, 2).map(s => s
 const localDay = value => new Date(new Date(value).getTime() + 19800000).toISOString().slice(0, 10);
 
 function getProviderPhoto(b) {
-  if (b.providerAvatar) return { uri: b.providerAvatar };
+  if (Object.prototype.hasOwnProperty.call(b, 'providerAvatar')) return b.providerAvatar ? { uri: b.providerAvatar } : null;
   if (b.providerName && PROVIDER_PHOTOS[b.providerName]) return PROVIDER_PHOTOS[b.providerName];
   if (b.service && PROVIDER_PHOTOS[b.service]) return PROVIDER_PHOTOS[b.service];
   return null;
@@ -172,6 +172,7 @@ export function BookingFlowModal({ provider: initialProvider, onClose, onTrack, 
   const [provider, setProvider] = useState(initialProvider), [mode, setMode] = useState('published'), [windowEnd, setWindowEnd] = useState(null);
   const [alternatives, setAlternatives] = useState(null), [finding, setFinding] = useState(false), [alternativeError, setAlternativeError] = useState('');
   const alternativeRequest = useRef(null);
+  const [referenceRate, setReferenceRate] = useState({ referencePrice: provider.referencePrice, priceUnit: provider.priceUnit });
   const [pricing, setPricing] = useState(rescheduling?.pricing || provider.pricing), [accepted, setAccepted] = useState(false);
   const [step, setStep] = useState(rescheduling ? 1 : 2), [slots, setSlots] = useState([]), [loading, setLoading] = useState(true);
   const [error, setError] = useState(''), [availabilityError, setAvailabilityError] = useState(''), [selected, setSelected] = useState(''), [day, setDay] = useState(localDay(new Date()));
@@ -185,7 +186,7 @@ export function BookingFlowModal({ provider: initialProvider, onClose, onTrack, 
     setLoading(true); setAvailabilityError('');
     request.current?.abort(); const controller = new AbortController(); request.current = controller;
     return bookingService.availability(provider.id, controller.signal, rescheduling?.id).then(result => {
-      if (!controller.signal.aborted) { setError(''); if (!rescheduling) { setPricing(result.pricing); setAccepted(false); } setSlots(result.slots); }
+      if (!controller.signal.aborted) { setError(''); if (!rescheduling) { setPricing(result.pricing); setReferenceRate({ referencePrice: result.referencePrice, priceUnit: result.priceUnit }); setAccepted(false); } setSlots(result.slots); }
     }).catch(e => { if (!controller.signal.aborted) setAvailabilityError(errorMessage(e)); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
   }, [provider.id, rescheduling]);
 
@@ -221,7 +222,7 @@ export function BookingFlowModal({ provider: initialProvider, onClose, onTrack, 
   function review() { setAttempted(true); if (!problem.trim() || !location.trim()) { setError('Complete the required fields below.'); scroll.current?.scrollTo({ y: 0, animated: true }); (!problem.trim() ? problemInput : locationInput).current?.focus(); return; } go(1); }
 
   async function submit() {
-    if (lock.current || !canContinue) return;
+    if (lock.current || !canContinue || (!rescheduling && !accepted)) return;
     lock.current = true; setBusy(true); setError('');
     try {
       let result;
@@ -254,7 +255,7 @@ export function BookingFlowModal({ provider: initialProvider, onClose, onTrack, 
           {!!error && <View style={s.errorBox}><Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={s.dangerText}>{error}</Text>{step === 1 && <Button secondary title="Try again" onPress={load} />}</View>}
           {!!availabilityError && step < 4 && <View style={s.errorBox}><Text accessibilityRole="alert" style={s.dangerText}>Could not check availability and pricing. {availabilityError}</Text><Button secondary title="Retry availability" disabled={loading} onPress={load} /></View>}
           {step === 1 && <>
-            <View style={[s.card, s.providerCard]}><View style={s.avatar}><Image source={ASSETS.avatar} style={{ width: 64, height: 64 }} /><Text style={s.avatarLetters}>{initials(provider.name)}</Text></View><View style={s.flex}><Text style={s.providerName}>{provider.name}</Text><Text style={s.subtitle}>{provider.category}</Text><Text style={s.availability}>{loading ? 'Checking appointments…' : availabilityError ? 'Availability not checked' : available ? 'Published appointments available' : 'Preferred-time requests welcome'}</Text></View></View>
+            <View style={[s.card, s.providerCard]}><View style={s.avatar}><Image source={provider.avatar ? { uri: provider.avatar } : ASSETS.avatar} style={{ width: 64, height: 64, borderRadius: 32 }} />{!provider.avatar && <Text style={s.avatarLetters}>{initials(provider.name)}</Text>}</View><View style={s.flex}><Text style={s.providerName}>{provider.name}</Text><Text style={s.subtitle}>{provider.category}</Text><Text style={s.availability}>{loading ? 'Checking appointments…' : availabilityError ? 'Availability not checked' : available ? 'Published appointments available' : 'Preferred-time requests welcome'}</Text></View></View>
             <View style={s.sectionHeading}><Text style={s.sectionTitle}>Select a date</Text><Text style={s.caption}>{bookingDate(days[0].stamp, { day: undefined, month: 'long', year: 'numeric' })}</Text></View>
             <View style={s.weekControls}><Pressable accessibilityRole="button" accessibilityLabel="Previous week" style={s.weekButton} disabled={week === 0} onPress={() => { setWeek(week - 1); setDay(localDay(new Date(new Date(today + 'T00:00:00+05:30').getTime() + (week - 1) * 7 * 86400000))); choose(''); }}><Text style={[s.link, week === 0 && s.muted]}>‹ Previous</Text></Pressable><Text style={s.caption}>Sri Lanka time</Text><Pressable accessibilityRole="button" accessibilityLabel="Next week" style={s.weekButton} disabled={week >= 12} onPress={() => { setWeek(week + 1); setDay(localDay(new Date(new Date(today + 'T00:00:00+05:30').getTime() + (week + 1) * 7 * 86400000))); choose(''); }}><Text style={[s.link, week >= 12 && s.muted]}>Next ›</Text></Pressable></View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.dates}>{days.map(d => { const active = d.date === day, hasSlots = slots.some(slot => slot.date === d.date && slot.available); return <Pressable key={d.date} accessibilityRole="button" accessibilityLabel={bookingDate(d.stamp, { weekday: 'long', month: 'long' })} aria-pressed={active} accessibilityState={{ selected: active }} onPress={() => { setDay(d.date); choose(''); }} style={[s.date, active && s.active]}><Text style={[s.dayName, active && s.white]}>{bookingDate(d.stamp, { day: undefined, month: undefined, weekday: 'short' }).toUpperCase()}</Text><Text style={[s.dayNumber, active && s.white]}>{bookingDate(d.stamp, { month: undefined })}</Text>{hasSlots && <Image source={active ? ASSETS.selectedDot : ASSETS.dot} style={{ width: 6, height: 6 }} />}</Pressable>; })}</ScrollView>
@@ -267,11 +268,12 @@ export function BookingFlowModal({ provider: initialProvider, onClose, onTrack, 
             <Text style={s.label}>Problem description *</Text><TextInput ref={problemInput} accessibilityLabel="Problem description, required" placeholder="Describe the work you need help with" editable={!rescheduling} value={problem} onChangeText={value => { setProblem(value); setError(''); }} maxLength={2000} multiline style={[s.input, s.problem]} />
             <Text style={s.label}>Service location *</Text><TextInput ref={locationInput} accessibilityLabel="Service location, required" placeholder="House number, street and city" editable={!rescheduling} value={location} onChangeText={value => { setLocation(value); setError(''); }} maxLength={500} style={s.input} />
             <Text style={s.label}>Access notes (optional)</Text><TextInput accessibilityLabel="Access notes" placeholder="Directions, parking or arrival instructions" value={notes} onChangeText={value => { setNotes(value); setError(''); }} maxLength={1000} multiline style={[s.input, s.notes]} />
-            <View style={[s.card, s.spaced]}><Text style={s.caption}>Pricing</Text><Text style={s.price}>{bookingPrice({ pricing })}</Text></View><View style={s.grow} /><Button title="Choose date & time" onPress={review} />
+            <View style={[s.card, s.spaced]}><Text style={s.caption}>Pricing</Text><Text style={s.price}>{loading ? "Checking current price…" : availabilityError ? "Price could not be checked" : bookingPrice({ pricing, ...referenceRate })}</Text><Text style={s.subtitle}>{pricingExplanation(pricing)}</Text></View><View style={s.grow} /><Button title="Choose date & time" onPress={review} />
           </>}
           {step === 3 && <>
-            <View style={s.card}><Detail label="Provider" value={provider.name} /><Detail label="Service" value={provider.category} /><Detail label="Date & time" value={selectionLabel} edit={() => go(1)} /><Detail label="Location" value={location} edit={rescheduling ? undefined : () => go(2)} /><Detail label="Pricing" value={bookingPrice(rescheduling || { pricing })} /></View>
+            <View style={s.card}><Detail label="Provider" value={provider.name} /><Detail label="Service" value={provider.category} /><Detail label="Date & time" value={selectionLabel} edit={() => go(1)} /><Detail label="Location" value={location} edit={rescheduling ? undefined : () => go(2)} /><Detail label="Pricing" value={bookingPrice(rescheduling || { pricing, ...referenceRate })} /></View>
             <View style={[s.card, s.spaced]}><Detail label="Problem description" value={problem} edit={rescheduling ? undefined : () => go(2)} />{!!notes && <Detail label="Access notes" value={notes} edit={rescheduling ? undefined : () => go(2)} />}</View>
+            <View style={[s.card, s.spaced]}><Text style={s.subtitle}>{pricingExplanation(pricing)}</Text>{!!pricing?.inclusions && <Text style={s.subtitle}>Included: {pricing.inclusions}</Text>}{!!pricing?.exclusions && <Text style={s.subtitle}>Excluded: {pricing.exclusions}</Text>}<Text style={s.subtitle}>You are sending a request. The appointment is confirmed only after the provider accepts.</Text>{!rescheduling && <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: accepted, disabled: busy || loading || !!availabilityError }} disabled={busy || loading || !!availabilityError} onPress={() => setAccepted(value => !value)} style={{ minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 }}><Ionicons name={accepted ? 'checkbox' : 'square-outline'} color={COLORS.primary} size={26} /><Text style={[s.value, { flex: 1 }]}>{pricing?.type === 'fixed' ? 'I agree to the listed scope and fixed total.' : pricing?.type === 'inspection' ? 'I agree to the inspection fee. Repairs need my separate approval.' : 'I understand that I must approve a quote before work begins.'}</Text></Pressable>}</View>
             <View style={s.grow} /><Button disabled={!canContinue || (!rescheduling && !accepted)} title={busy ? 'Sending…' : rescheduling ? 'Send reschedule request' : 'Send booking request'} onPress={submit} />
           </>}
           {step === 4 && sent && <>
@@ -481,6 +483,8 @@ export default function BookingsScreen({ navigation }) {
                 </Pressable>
               </View>
 
+              {b.status === 'completed' && <Button secondary title={b.review ? 'View your review' : 'Rate & review service'} onPress={() => { setDetail(b); setCancel(false); }} />}
+
               {/* Expanded Content Section */}
               {isExpanded && (
                 <View style={s.expandedContent}>
@@ -648,6 +652,7 @@ export function BookingCharges({ booking: b, onUpdate, provider = false, onBusyC
 
   return (
     <View style={[s.card, s.spaced]}>
+      {b.status === 'completed' && <ServiceReview booking={b} provider={provider} onUpdate={onUpdate} disabled={busy} onBusyChange={value => { lock.current = value; setBusy(value); onBusyChange?.(value); }} />}
       {b.status === 'time_proposed' && <><Text style={s.sectionTitle}>Provider suggested another time</Text><Text style={s.value}>{bookingWhen(b.proposedStartsAt)}</Text><Text style={s.subtitle}>{provider ? 'The customer requested' : 'Your requested time is'} {bookingPreference(b)}. This suggestion is not reserved until {provider ? 'the customer accepts' : 'you accept'}. Your agreed pricing stays the same.</Text>{!provider && <><Button title="Accept suggested time" disabled={busy} onPress={() => run('accept_time')} /><Button secondary title="Keep my requested time" disabled={busy} onPress={() => run('decline_time')} /></>}</>}
       <Text style={s.sectionTitle}>Pricing & payment</Text>{b.status === 'awaiting_quote' && <Text style={s.subtitle}>Appointment accepted. Work can start only after the customer approves the provider’s quote.</Text>}<Text style={s.value}>{bookingPrice(b)}</Text>
       {!!b.pricing?.inclusions && <Text style={s.subtitle}>Included: {b.pricing.inclusions}</Text>}{!!b.pricing?.exclusions && <Text style={s.subtitle}>Excluded: {b.pricing.exclusions}</Text>}
@@ -662,6 +667,27 @@ export function BookingCharges({ booking: b, onUpdate, provider = false, onBusyC
       </>}{!provider && <IssueReporter booking={b} disabled={busy} onBusyChange={value => { lock.current = value; setBusy(value); onBusyChange?.(value); }} />}{!!error && <><Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={s.dangerText}>{error}</Text><Button secondary title="Refresh booking details" disabled={busy} onPress={refreshBooking} /></>}
     </View>
   );
+}
+
+function ServiceReview({ booking, provider, onUpdate, disabled, onBusyChange }) {
+  const [open, setOpen] = useState(false), [rating, setRating] = useState(0), [comment, setComment] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const lock = useRef(false);
+  async function submit() {
+    if (lock.current || disabled) return;
+    if (!rating) { setError('Choose a star rating from 1 to 5.'); return; }
+    lock.current = true; setBusy(true); onBusyChange(true); setError('');
+    try { onUpdate(await bookingService.review(booking.id, { rating, comment: comment.trim(), bookingVersion: booking.version })); }
+    catch (e) { setError(errorMessage(e) + ' Your review draft is kept.'); }
+    finally { lock.current = false; setBusy(false); onBusyChange(false); }
+  }
+  async function refresh() {
+    if (lock.current) return; lock.current = true; setBusy(true); onBusyChange(true);
+    try { const rows = await bookingService.list(); const current = rows.find(b => b.id === booking.id); if (!current) throw new Error(); onUpdate(current); setError(''); }
+    catch (e) { setError(errorMessage(e)); } finally { lock.current = false; setBusy(false); onBusyChange(false); }
+  }
+  if (booking.review) return <View style={s.bookingInfo}><Text accessibilityRole="header" style={s.sectionTitle}>{provider ? 'Customer review' : 'Your review'}</Text><Text accessibilityLiveRegion="polite" style={s.value}>{booking.review.rating} out of 5 stars · Verified booking</Text>{!!booking.review.comment && <Text style={s.subtitle}>{booking.review.comment}</Text>}<Text style={s.caption}>{bookingDate(booking.review.createdAt)}</Text></View>;
+  if (provider) return null;
+  return <View style={s.spaced}><Button secondary title={open ? 'Close review form' : 'Write a review'} disabled={disabled || busy} onPress={() => setOpen(!open)} />{open && <View style={s.bookingInfo}><Text accessibilityRole="header" style={s.sectionTitle}>How was your {booking.invoice?.inspectionOnly ? 'inspection' : 'service'}?</Text><Text style={s.subtitle}>One public review per completed booking. Your first name, rating and comment will appear on the provider profile. Do not include private contact or payment details.</Text><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>{[1,2,3,4,5].map(value => <Pressable key={value} accessibilityRole="radio" accessibilityLabel={value + (value === 1 ? ' star' : ' stars')} accessibilityState={{ checked: rating === value, disabled: busy || disabled }} disabled={busy || disabled} onPress={() => { setRating(value); setError(''); }} style={{ minWidth: 44, minHeight: 48, justifyContent: 'center', alignItems: 'center' }}><Ionicons name={value <= rating ? 'star' : 'star-outline'} size={28} color="#8D5B09" /></Pressable>)}</View><Text accessibilityLiveRegion="polite" style={s.value}>{rating ? rating + ' of 5 stars selected' : 'Select a rating'}</Text><Text style={s.label}>Review (optional)</Text><TextInput accessibilityLabel="Review comment, optional" editable={!busy && !disabled} multiline maxLength={1000} value={comment} onChangeText={setComment} style={[s.input, s.problem]} /><Text style={s.caption}>{comment.length}/1,000 characters</Text>{!!error && <><Text accessibilityRole="alert" style={s.dangerText}>{error}</Text><Button secondary title="Refresh before retrying review" disabled={busy || disabled} onPress={refresh} /></>}<Button title={busy ? 'Submitting review…' : 'Submit review'} disabled={busy || disabled} onPress={submit} /></View>}</View>;
 }
 
 function IssueReporter({ booking, onBusyChange, disabled }) {

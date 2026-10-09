@@ -11,7 +11,7 @@ const Avatar = ({ name, uri, size = 48, radius = 14, fontSize, tone = "lavender"
   const box = { width: size, height: size, borderRadius: radius };
 
   if (uri) {
-    return <Image source={{ uri }} style={[box, style]} />;
+    return <Image accessibilityLabel={`${name || "Provider"} profile photo`} source={{ uri }} style={[box, style]} />;
   }
 
   return (
