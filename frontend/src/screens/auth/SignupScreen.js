@@ -101,7 +101,18 @@ const SignupScreen = ({ navigation }) => {
   };
 
   // Provider specific details & verification documents
-  const [category, setCategory] = useState("");
+  const CATEGORY_OPTIONS = [
+    "Plumbing",
+    "Electrical",
+    "Cleaning",
+    "Painting",
+    "Gardening",
+    "Appliance Repair",
+    "Other",
+  ];
+  const [category, setCategory] = useState("Plumbing");
+  const [customCategory, setCustomCategory] = useState("");
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [experience, setExperience] = useState("");
   const [nicFront, setNicFront] = useState("");
   const [nicBack, setNicBack] = useState("");
@@ -257,7 +268,8 @@ const SignupScreen = ({ navigation }) => {
     if (!role) return "Please select account role";
 
     if (role === "provider") {
-      if (!category.trim()) return "Please select or enter your service category";
+      const selectedCat = category === "Other" ? customCategory.trim() : category.trim();
+      if (!selectedCat) return "Please select or enter your service category";
       if (!nicFront) return "NIC Front Image is required for Service Providers";
       if (!nicBack) return "NIC Back Image is required for Service Providers";
     }
@@ -276,6 +288,8 @@ const SignupScreen = ({ navigation }) => {
     setErrorMessage("");
     setLoading(true);
 
+    const finalCategory = category === "Other" ? customCategory.trim() : category.trim();
+
     const userData = {
       name: name.trim(),
       email: email.trim(),
@@ -287,7 +301,7 @@ const SignupScreen = ({ navigation }) => {
 
     if (role === "provider") {
       userData.providerDetails = {
-        category: category.trim(),
+        category: finalCategory,
         experience: experience.trim(),
         nicFront,
         nicBack,
@@ -539,17 +553,70 @@ const SignupScreen = ({ navigation }) => {
                   🛠️ Service Provider Verification Details
                 </Text>
 
-                {/* Service Category */}
-                <View style={styles.inputGroup}>
+                {/* Service Category Dropdown */}
+                <View style={[styles.inputGroup, { zIndex: 10 }]}>
                   <Text style={styles.label}>Service Category *</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g. Plumbing, Electrical, Cleaning"
-                    placeholderTextColor="#94A3B8"
-                    value={category}
-                    onChangeText={setCategory}
-                  />
+                  <TouchableOpacity
+                    style={styles.dropdownSelector}
+                    onPress={() => setShowCategoryDropdown((prev) => !prev)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.dropdownSelectorText}>{category}</Text>
+                    <MaterialCommunityIcons
+                      name={showCategoryDropdown ? "chevron-up" : "chevron-down"}
+                      size={22}
+                      color={COLORS.textPrimary}
+                    />
+                  </TouchableOpacity>
+
+                  {showCategoryDropdown && (
+                    <View style={styles.dropdownMenu}>
+                      {CATEGORY_OPTIONS.map((opt) => (
+                        <TouchableOpacity
+                          key={opt}
+                          style={[
+                            styles.dropdownItem,
+                            category === opt && styles.dropdownItemActive,
+                          ]}
+                          onPress={() => {
+                            setCategory(opt);
+                            setShowCategoryDropdown(false);
+                          }}
+                        >
+                          <Text
+                            style={[
+                              styles.dropdownItemText,
+                              category === opt && styles.dropdownItemTextActive,
+                            ]}
+                          >
+                            {opt}
+                          </Text>
+                          {category === opt && (
+                            <MaterialCommunityIcons
+                              name="check"
+                              size={18}
+                              color={COLORS.primary}
+                            />
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
                 </View>
+
+                {/* Custom Category Input if "Other" is selected */}
+                {category === "Other" && (
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Specify Your Category *</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="e.g. Carpentry, Roofing, AC Repair"
+                      placeholderTextColor="#94A3B8"
+                      value={customCategory}
+                      onChangeText={setCustomCategory}
+                    />
+                  </View>
+                )}
 
                 {/* Experience */}
                 <View style={styles.inputGroup}>
@@ -1540,6 +1607,58 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "800",
+  },
+
+  // Dropdown Styles
+  dropdownSelector: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: COLORS.inputBg,
+    borderWidth: 1,
+    borderColor: COLORS.inputBorder,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  dropdownSelectorText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: COLORS.textPrimary,
+  },
+  dropdownMenu: {
+    marginTop: 6,
+    backgroundColor: COLORS.secondary,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.inputBorder,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  dropdownItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: COLORS.inputBorder,
+  },
+  dropdownItemActive: {
+    backgroundColor: "#F3F0FF",
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    color: COLORS.textPrimary,
+    fontWeight: "500",
+  },
+  dropdownItemTextActive: {
+    color: COLORS.primary,
+    fontWeight: "700",
   },
 });
 

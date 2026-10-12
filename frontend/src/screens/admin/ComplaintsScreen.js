@@ -9,6 +9,8 @@ import {
   StyleSheet,
   Modal,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { useFocusEffect } from '@react-navigation/native';
 import { complaintService } from '../../services/complaintService';
@@ -228,7 +230,176 @@ const ComplaintsScreen = () => {
           </View>
         )}
       </ScrollView>
-      {!!selected && <Modal visible animationType="slide" onRequestClose={() => { if (!busy) setSelected(null); }}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, paddingTop: insets.top + 20, gap: 16 }}><Text style={styles.screenTitle}>Support case</Text><Text style={styles.title}>{selected.booking} · {selected.status}</Text><Text style={styles.party}>{selected.customer} · {selected.provider}</Text><Text style={styles.party}>{selected.description}</Text><Text style={styles.title}>Response to customer</Text><TextInput accessibilityLabel="Response to customer" multiline maxLength={2000} value={response} onChangeText={setResponse} style={[styles.search, { minHeight: 120, padding: 16 }]} /><Text style={styles.subtitle}>A case response does not change charges, payments or booking status.</Text>{!!error && <Text accessibilityRole="alert">{error}</Text>}{['Under Review', 'Resolved'].map(status => <TouchableOpacity key={status} accessibilityRole="button" disabled={busy || (status === 'Resolved' && !response.trim())} onPress={() => update(status)} style={styles.action}><Text style={styles.actionText}>{busy ? 'Saving…' : 'Mark ' + status}</Text></TouchableOpacity>)}<TouchableOpacity accessibilityRole="button" disabled={busy} style={styles.action} onPress={() => { setSelected(null); void load(); }}><Text style={styles.actionText}>Back to complaints</Text></TouchableOpacity></ScrollView></Modal>}
+      {/* --------------------------------------------------------------------------- */}
+      {/* CASE DETAILS POPUP MODAL                                                   */}
+      {/* --------------------------------------------------------------------------- */}
+      <Modal
+        visible={!!selected}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => {
+          if (!busy) setSelected(null);
+        }}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1 }}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              {/* Modal Header */}
+              <View style={styles.modalHeader}>
+                <View style={styles.modalHeaderTitleRow}>
+                  <View style={styles.modalIconCircle}>
+                    <MaterialCommunityIcons name="message-alert" size={22} color="#FFFFFF" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.modalTitle}>Support Case Details</Text>
+                    <Text style={styles.modalSub}>{selected?.id} · {selected?.booking}</Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={styles.modalCloseBtn}
+                  onPress={() => {
+                    if (!busy) setSelected(null);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close"
+                >
+                  <MaterialCommunityIcons name="close" size={20} color={COLORS.textPrimary} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Modal Body */}
+              <ScrollView
+                style={styles.modalScroll}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                {/* Priority & Status Badges */}
+                <View style={styles.modalBadgeRow}>
+                  {selected?.priority && (
+                    <View style={[styles.badge, { backgroundColor: PRIORITY_STYLES[selected.priority]?.bg }]}>
+                      <Text style={[styles.badgeText, { color: PRIORITY_STYLES[selected.priority]?.text }]}>
+                        {PRIORITY_STYLES[selected.priority]?.label}
+                      </Text>
+                    </View>
+                  )}
+                  {selected?.status && (
+                    <View style={[styles.badge, { backgroundColor: STATUS_STYLES[selected.status]?.bg }]}>
+                      <Text style={[styles.badgeText, { color: STATUS_STYLES[selected.status]?.text }]}>
+                        {selected.status}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Complaint Title & Date */}
+                <View style={styles.detailBox}>
+                  <Text style={styles.detailBoxLabel}>Issue Title</Text>
+                  <Text style={styles.detailBoxTitle}>{selected?.title}</Text>
+                  <Text style={styles.detailDateText}>
+                    Filed: {selected?.createdAt ? new Date(selected.createdAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : "N/A"}
+                  </Text>
+                </View>
+
+                {/* Parties Involved */}
+                <View style={styles.partiesBox}>
+                  <View style={styles.partyItem}>
+                    <MaterialCommunityIcons name="account" size={18} color={COLORS.primary} />
+                    <View>
+                      <Text style={styles.partyRoleLabel}>Customer</Text>
+                      <Text style={styles.partyValueText}>{selected?.customer}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.partyDivider} />
+                  <View style={styles.partyItem}>
+                    <MaterialCommunityIcons name="wrench" size={18} color={COLORS.primary} />
+                    <View>
+                      <Text style={styles.partyRoleLabel}>Service Provider</Text>
+                      <Text style={styles.partyValueText}>{selected?.provider}</Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Complaint Description */}
+                <View style={styles.sectionBox}>
+                  <Text style={styles.sectionBoxLabel}>Customer Description</Text>
+                  <Text style={styles.descriptionText}>{selected?.description}</Text>
+                </View>
+
+                {/* Response Input */}
+                <View style={styles.sectionBox}>
+                  <Text style={styles.sectionBoxLabel}>Response to Customer *</Text>
+                  <TextInput
+                    accessibilityLabel="Response to customer"
+                    multiline
+                    maxLength={2000}
+                    value={response}
+                    onChangeText={setResponse}
+                    placeholder="Write an official response or resolution details for the customer..."
+                    placeholderTextColor={COLORS.disabledText}
+                    style={styles.responseInput}
+                  />
+                  <Text style={styles.responseHint}>
+                    A case response will be visible to the customer and provider.
+                  </Text>
+                </View>
+
+                {!!error && (
+                  <View style={styles.modalErrorBox}>
+                    <Text style={styles.modalErrorText}>{error}</Text>
+                  </View>
+                )}
+
+                {/* Action Buttons */}
+                <View style={styles.modalActionsGroup}>
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    disabled={busy}
+                    onPress={() => update("Under Review")}
+                    style={[styles.modalActionBtn, styles.underReviewBtn, busy && styles.disabledBtn]}
+                  >
+                    <MaterialCommunityIcons name="clock-outline" size={18} color="#2F5FD0" />
+                    <Text style={styles.underReviewBtnText}>
+                      {busy ? "Saving..." : "Mark Under Review"}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    disabled={busy || !response.trim()}
+                    onPress={() => update("Resolved")}
+                    style={[
+                      styles.modalActionBtn,
+                      styles.resolveBtn,
+                      (busy || !response.trim()) && styles.disabledBtn,
+                    ]}
+                  >
+                    <MaterialCommunityIcons name="check-circle-outline" size={18} color="#FFFFFF" />
+                    <Text style={styles.resolveBtnText}>
+                      {busy ? "Saving..." : "Mark Resolved"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Secondary Dismiss Button */}
+                {/* <TouchableOpacity
+                  accessibilityRole="button"
+                  disabled={busy}
+                  style={styles.closeSecondaryBtn}
+                  onPress={() => {
+                    setSelected(null);
+                    void load();
+                  }}
+                >
+                  <Text style={styles.closeSecondaryBtnText}>Close Popup</Text>
+                </TouchableOpacity> */}
+              </ScrollView>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 };
@@ -452,6 +623,233 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     marginTop: 6,
     textAlign: "center",
+  },
+
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.6)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    backgroundColor: COLORS.secondary,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    maxHeight: "88%",
+    paddingBottom: 24,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.inputBorder,
+  },
+  modalHeaderTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    gap: 12,
+  },
+  modalIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: COLORS.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: COLORS.textPrimary,
+  },
+  modalSub: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    marginTop: 2,
+  },
+  modalCloseBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 10,
+  },
+  modalScroll: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  modalBadgeRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 16,
+  },
+  detailBox: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: COLORS.inputBorder,
+  },
+  detailBoxLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: COLORS.textMuted,
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
+  detailBoxTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: COLORS.textPrimary,
+  },
+  detailDateText: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    marginTop: 6,
+  },
+  partiesBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: COLORS.inputBorder,
+  },
+  partyItem: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  partyRoleLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: COLORS.textMuted,
+    textTransform: "uppercase",
+  },
+  partyValueText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: COLORS.textPrimary,
+    marginTop: 2,
+  },
+  partyDivider: {
+    width: 1,
+    height: 30,
+    backgroundColor: COLORS.inputBorder,
+    marginHorizontal: 12,
+  },
+  sectionBox: {
+    marginBottom: 16,
+  },
+  sectionBoxLabel: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: COLORS.textPrimary,
+    marginBottom: 8,
+  },
+  descriptionText: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: COLORS.textPrimary,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: COLORS.inputBorder,
+  },
+  responseInput: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.inputBorder,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    minHeight: 110,
+    textAlignVertical: "top",
+    fontSize: 14,
+    color: COLORS.textPrimary,
+  },
+  responseHint: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    marginTop: 6,
+  },
+  modalErrorBox: {
+    backgroundColor: "#FEE2E2",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: COLORS.error,
+  },
+  modalErrorText: {
+    color: COLORS.error,
+    fontSize: 13,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  modalActionsGroup: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  modalActionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderRadius: 14,
+    paddingVertical: 14,
+  },
+  underReviewBtn: {
+    backgroundColor: "#E3EDFD",
+    borderWidth: 1,
+    borderColor: "#BFD5FA",
+  },
+  underReviewBtnText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#2F5FD0",
+  },
+  resolveBtn: {
+    backgroundColor: COLORS.primary,
+  },
+  resolveBtnText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#FFFFFF",
+  },
+  disabledBtn: {
+    opacity: 0.5,
+  },
+  closeSecondaryBtn: {
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  closeSecondaryBtnText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: COLORS.textMuted,
   },
 });
 
