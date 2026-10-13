@@ -1,3 +1,4 @@
+import CustomerActivityModal from './CustomerActivityModal';
 import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
@@ -45,7 +46,7 @@ const CATEGORIES = [
   { id: "electrical", name: "Electrical", icon: "lightning-bolt-outline", pros: "186+ pros", bg: "#FEF3C7", iconColor: "#D97706" },
   { id: "cleaning", name: "Cleaning", icon: "spray-bottle", pros: "310+ pros", bg: "#F3E8FF", iconColor: COLORS.primary },
   { id: "painting", name: "Painting", icon: "format-paint", pros: "128+ pros", bg: "#E0E7FF", iconColor: "#4F46E5" },
-  { id: "gardening", name: "Gardening", icon: "leaf-outline", pros: "94+ pros", bg: "#DCFCE7", iconColor: "#16A34A" },
+  { id: "gardening", name: "Gardening", icon: "leaf", pros: "94+ pros", bg: "#DCFCE7", iconColor: "#16A34A" },
   { id: "appliance", name: "Appliance Repair", icon: "washing-machine", pros: "112+ pros", bg: "#FFE4E6", iconColor: "#E11D48" },
 ];
 
@@ -129,6 +130,7 @@ const getInitials = (name = "") => {
 };
 
 const CustomerDashboard = ({ navigation }) => {
+ const [activityMode, setActivityMode] = useState(null);
   const { user, updateUserLocation } = useAuth();
   const insets = useSafeAreaInsets();
 
@@ -278,6 +280,7 @@ const CustomerDashboard = ({ navigation }) => {
 
   return (
     <View style={styles.screen}>
+ {!!activityMode && <CustomerActivityModal mode={activityMode} onClose={() => setActivityMode(null)} navigation={navigation} />}
       <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -299,7 +302,7 @@ const CustomerDashboard = ({ navigation }) => {
             <View style={styles.headerIconsRow}>
               <TouchableOpacity
                 style={styles.headerIconBtn}
-                onPress={() => comingSoon("Bookmarks")}
+                onPress={() => setActivityMode("bookmarks")}
                 accessibilityRole="button"
                 accessibilityLabel="Saved bookmarks"
               >
@@ -307,7 +310,7 @@ const CustomerDashboard = ({ navigation }) => {
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.headerIconBtn}
-                onPress={() => navigation.navigate("Bookings")}
+                onPress={() => setActivityMode("notifications")}
                 accessibilityRole="button"
                 accessibilityLabel="Booking notifications"
               >
@@ -480,12 +483,7 @@ const CustomerDashboard = ({ navigation }) => {
             >
               <View style={styles.serviceImageContainer}>
                 <Image source={s.image} style={styles.serviceImage} />
-                <TouchableOpacity
-                  style={styles.bookmarkBadge}
-                  onPress={() => comingSoon("Bookmark")}
-                >
-                  <MaterialCommunityIcons name="bookmark-outline" size={16} color={COLORS.primary} />
-                </TouchableOpacity>
+
               </View>
 
               <View style={styles.serviceContent}>
@@ -547,12 +545,7 @@ const CustomerDashboard = ({ navigation }) => {
                 </View>
               </View>
 
-              <TouchableOpacity
-                style={styles.proBookmarkBtn}
-                onPress={() => comingSoon("Bookmark Pro")}
-              >
-                <MaterialCommunityIcons name="bookmark-outline" size={20} color={COLORS.primary} />
-              </TouchableOpacity>
+
             </TouchableOpacity>
           ))}
         </View>

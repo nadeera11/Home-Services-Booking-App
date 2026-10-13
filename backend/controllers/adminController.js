@@ -318,122 +318,54 @@ const getDashboardStats = async (req, res) => {
  */
 const getReportsAnalytics = async (req, res) => {
   try {
-    const Booking = require("../models/Booking");
-    const periodsDays = { "Last 7 days": 7, "Last 30 days": 30, "Last 90 days": 90 };
+    const Booking = require('../models/Booking');
+    const now = new Date(), day = 86400000;
+    const earliest = new Date(now.getTime() - 180 * day);
+    // Read only report fields; avoid dozens of sequential database round trips.
+    const [bookings, users] = await Promise.all([
+      Booking.find({ createdAt: { $gte: earliest, $lte: now } }).select('createdAt status review.rating').lean(),
+      User.find({ role: { $in: ['customer', 'provider'] }, createdAt: { $gte: earliest, $lte: now } }).select('createdAt role').lean(),
+    ]);
     const result = {};
-
-    const now = new Date();
-
-    for (const [key, days] of Object.entries(periodsDays)) {
-      const currentStart = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-      const priorStart = new Date(now.getTime() - days * 2 * 24 * 60 * 60 * 1000);
-
-      // Bookings in current period
-      const currentBookings = await Booking.find({ createdAt: { $gte: currentStart } });
-      const priorBookingsCount = await Booking.countDocuments({
-        createdAt: { $gte: priorStart, $lt: currentStart },
-      });
-
-      const totalCount = currentBookings.length;
-      const completedCount = currentBookings.filter((b) => b.status === "completed").length;
-      const cancelledCount = currentBookings.filter((b) => b.status === "cancelled" || b.status === "rejected").length;
-
-      // Prior period metrics for trends
-      const priorCompletedCount = await Booking.countDocuments({
-        createdAt: { $gte: priorStart, $lt: currentStart },
-        status: "completed",
-      });
-      const priorCancelledCount = await Booking.countDocuments({
-        createdAt: { $gte: priorStart, $lt: currentStart },
-        status: { $in: ["cancelled", "rejected"] },
-      });
-
-      // Calculate percentage changes
-      const totalDiff = priorBookingsCount > 0 ? (((totalCount - priorBookingsCount) / priorBookingsCount) * 100).toFixed(1) : "0.0";
-      const completedDiff = priorCompletedCount > 0 ? (((completedCount - priorCompletedCount) / priorCompletedCount) * 100).toFixed(1) : "0.0";
-      const cancelledDiff = priorCancelledCount > 0 ? (((cancelledCount - priorCancelledCount) / priorCancelledCount) * 100).toFixed(1) : "0.0";
-
-      // Time breakdown arrays for chart (7 data points)
-      const numPoints = 7;
-      const stepMs = (days * 24 * 60 * 60 * 1000) / (numPoints - 1);
-      const bookingsTrend = [];
-      const cancellationsTrend = [];
-      const customersTrend = [];
-      const providersTrend = [];
-
-      for (let i = 0; i < numPoints; i++) {
-        const ptTime = new Date(currentStart.getTime() + i * stepMs);
-        const nextPtTime = new Date(currentStart.getTime() + (i + 1) * stepMs);
-
-        const bCount = await Booking.countDocuments({
-          createdAt: { $gte: ptTime, $lt: nextPtTime },
-        });
-        const cCount = await Booking.countDocuments({
-          createdAt: { $gte: ptTime, $lt: nextPtTime },
-          status: { $in: ["cancelled", "rejected"] },
-        });
-        const custCount = await User.countDocuments({
-          role: "customer",
-          createdAt: { $lte: nextPtTime },
-        });
-        const provCount = await User.countDocuments({
-          role: "provider",
-          createdAt: { $lte: nextPtTime },
-        });
-
-        bookingsTrend.push(bCount);
-        cancellationsTrend.push(cCount);
-        customersTrend.push(custCount);
-        providersTrend.push(provCount);
+    const metric = (value, prior, inverse = false) => ({
+      value: value.toLocaleString('en-US'),
+      dir: value >= prior ? 'up' : 'down',
+      good: inverse ? value <= prior : value >= prior,
+      note: prior ? Math.abs((value - prior) / prior * 100).toFixed(1) + '% vs prior' : 'No prior-period baseline',
+    });
+    const cancelled = b => ['cancelled', 'rejected'].includes(b.status);
+    const average = rows => {
+      const ratings = rows.filter(b => b.status === 'completed' && Number.isFinite(b.review?.rating)).map(b => b.review.rating);
+      return ratings.length ? ratings.reduce((a,b) => a+b, 0) / ratings.length : null;
+    };
+    for (const days of [7, 30, 90]) {
+      const from = now.getTime() - days * day;
+      const current = bookings.filter(b => +new Date(b.createdAt) >= from);
+      const prior = bookings.filter(b => +new Date(b.createdAt) >= from - days * day && +new Date(b.createdAt) < from);
+      const rating = average(current), previousRating = average(prior);
+      const counts = Array(7).fill(0), cancellations = Array(7).fill(0);
+      for (const b of current) {
+        const index = Math.min(6, Math.floor((+new Date(b.createdAt) - from) / (days * day) * 7));
+        counts[index]++; if (cancelled(b)) cancellations[index]++;
       }
-
-      // Format date labels
-      const formatLabel = (d) => `${d.getDate()} ${d.toLocaleString("en-US", { month: "short" })}`;
-      const labels = [
-        formatLabel(currentStart),
-        formatLabel(new Date(currentStart.getTime() + (days / 2) * 24 * 60 * 60 * 1000)),
-        formatLabel(now),
-      ];
-
-      result[key] = {
+      const growth = role => Array.from({length:7}, (_,i) => users.filter(u => u.role === role && +new Date(u.createdAt) >= from && +new Date(u.createdAt) <= from + (i + 1) * days * day / 7).length);
+      const label = time => new Intl.DateTimeFormat('en-GB', {day:'numeric', month:'short', timeZone:'Asia/Colombo'}).format(new Date(time));
+      result['Last ' + days + ' days'] = {
         stats: {
-          total: {
-            value: totalCount.toLocaleString("en-US"),
-            dir: Number(totalDiff) >= 0 ? "up" : "down",
-            good: Number(totalDiff) >= 0,
-            note: `${Math.abs(Number(totalDiff))}% vs prior`,
-          },
-          completed: {
-            value: completedCount.toLocaleString("en-US"),
-            dir: Number(completedDiff) >= 0 ? "up" : "down",
-            good: Number(completedDiff) >= 0,
-            note: `${Math.abs(Number(completedDiff))}% vs prior`,
-          },
-          cancelled: {
-            value: cancelledCount.toLocaleString("en-US"),
-            dir: Number(cancelledDiff) <= 0 ? "down" : "up",
-            good: Number(cancelledDiff) <= 0,
-            note: `${Math.abs(Number(cancelledDiff))}% vs prior`,
-          },
-          rating: {
-            value: "4.85",
-            dir: "up",
-            good: true,
-            note: "0.05 points",
-          },
+          total: metric(current.length, prior.length),
+          completed: metric(current.filter(b => b.status === 'completed').length, prior.filter(b => b.status === 'completed').length),
+          cancelled: metric(current.filter(cancelled).length, prior.filter(cancelled).length, true),
+          rating: {value: rating == null ? '—' : rating.toFixed(2), dir: rating >= previousRating ? 'up' : 'down', good: rating >= previousRating,
+            note: rating == null ? 'No reviews in this booking period' : previousRating == null ? 'No prior-period reviews' : Math.abs(rating - previousRating).toFixed(2) + ' points'},
         },
-        labels,
-        bookings: bookingsTrend,
-        cancellations: cancellationsTrend,
-        customers: customersTrend,
-        providers: providersTrend,
+        labels: [label(from), label(from + days * day / 2), label(now)],
+        bookings: counts, cancellations, customers: growth('customer'), providers: growth('provider'),
       };
     }
-
     return res.status(200).json(result);
   } catch (error) {
-    console.error("Get Reports Analytics Error:", error);
-    return res.status(500).json({ message: "Server error fetching reports analytics" });
+    console.error('Reports analytics failed:', error.name);
+    return res.status(503).json({message:'Reports are temporarily unavailable. Please try again.'});
   }
 };
 

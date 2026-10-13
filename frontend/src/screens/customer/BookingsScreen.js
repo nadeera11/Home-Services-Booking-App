@@ -287,7 +287,7 @@ export function BookingFlowModal({ provider: initialProvider, onClose, onTrack, 
   );
 }
 
-export default function BookingsScreen({ navigation }) {
+export default function BookingsScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const [bookings, setBookings] = useState([]);
   const [tab, setTab] = useState('Upcoming');
@@ -315,6 +315,12 @@ export default function BookingsScreen({ navigation }) {
       const data = await bookingService.list(controller.signal);
       if (!controller.signal.aborted) {
         setBookings(data);
+ if (route?.params?.bookingId) {
+  const target = data.find(b => b.id === route?.params?.bookingId);
+  if (target) { setDetail(target); setCancel(false); }
+  else setError('This booking is no longer available. Contact support if you need help.');
+  navigation.setParams({ bookingId: undefined });
+ }
         setDetail(current => current ? data.find(b => b.id === current.id) || current : null);
       }
     } catch (e) {
@@ -322,7 +328,7 @@ export default function BookingsScreen({ navigation }) {
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, []);
+  }, [navigation, route]);
 
   useFocusEffect(
     useCallback(() => {
@@ -343,7 +349,7 @@ export default function BookingsScreen({ navigation }) {
     } else {
       return ['cancelled', 'rejected'].includes(b.status);
     }
-  }).sort((a, b) => (tab === 'Upcoming' ? new Date(a.startsAt) - new Date(b.startsAt) : new Date(b.startsAt) - new Date(a.startsAt)));
+  }).sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0) || String(b.id).localeCompare(String(a.id)));
 
   const toggleExpand = (id) => {
     if (Platform.OS !== 'web') {
@@ -465,6 +471,7 @@ export default function BookingsScreen({ navigation }) {
                 <View style={s.cardMainDetails}>
                   <Text style={s.cardServiceName} numberOfLines={1}>{b.service}</Text>
                   <Text style={s.cardProviderName} numberOfLines={1}>{b.providerName}</Text>
+                  {Number.isFinite(Date.parse(b.createdAt)) && <Text style={s.bookedTimestamp}>Booked on {bookingDate(b.createdAt, { year: 'numeric' })} · {bookingTime(b.createdAt)}</Text>}
 
                   {/* Status Badge */}
                   <View style={s.badgeRow}>
@@ -851,6 +858,7 @@ const s = StyleSheet.create({
     fontWeight: '700',
     color: '#1D1B20',
   },
+  bookedTimestamp: { fontSize: 12, lineHeight: 18, color: '#625D6D', marginTop: 4 },
   cardProviderName: {
     fontSize: 13,
     color: '#6E6E76',

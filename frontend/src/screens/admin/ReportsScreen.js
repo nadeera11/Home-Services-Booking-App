@@ -240,6 +240,7 @@ const ReportsScreen = () => {
   const insets = useSafeAreaInsets();
   const [period, setPeriod] = useState("Last 30 days");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [reportsData, setReportsData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -250,9 +251,11 @@ const ReportsScreen = () => {
       else setLoading(true);
 
       const data = await adminService.getReportsAnalytics();
+      if (!PERIOD_OPTIONS.every(key => data?.[key]?.stats && ["bookings", "cancellations", "customers", "providers", "labels"].every(field => Array.isArray(data[key][field])))) throw new Error("Invalid report response");
       setReportsData(data);
+      setLoadError("");
     } catch (err) {
-      console.error("Fetch Reports Analytics Error:", err);
+      setLoadError(err.response?.data?.message || "Unable to load reports. Check your connection and try again.");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -265,22 +268,9 @@ const ReportsScreen = () => {
     }, [])
   );
 
-  const d = reportsData?.[period] || {
-    stats: {
-      total: { value: "0", dir: "up", good: true, note: "0.0% vs prior" },
-      completed: { value: "0", dir: "up", good: true, note: "0.0% vs prior" },
-      cancelled: { value: "0", dir: "down", good: true, note: "0.0% vs prior" },
-      rating: { value: "5.00", dir: "up", good: true, note: "0.00 points" },
-    },
-    labels: ["Start", "Middle", "Now"],
-    bookings: [0, 0, 0, 0, 0, 0, 0],
-    cancellations: [0, 0, 0, 0, 0, 0, 0],
-    customers: [0, 0, 0, 0, 0, 0, 0],
-    providers: [0, 0, 0, 0, 0, 0, 0],
-  };
-
-  const bookingsMax = niceMax([...d.bookings, ...d.cancellations], 1.1, 5);
-  const growthMax = niceMax([...d.customers, ...d.providers], 1.15, 5);
+  const d = reportsData?.[period];
+  const bookingsMax = d ? niceMax([...d.bookings, ...d.cancellations], 1.1, 5) : 1;
+  const growthMax = d ? niceMax([...d.customers, ...d.providers], 1.15, 5) : 1;
 
   return (
     <View style={styles.screen}>
@@ -354,9 +344,10 @@ const ReportsScreen = () => {
           </View>
         </View>
 
+        {!!loadError && <View style={styles.chartCard}><Text accessibilityRole="alert">{loadError}{d ? ' Showing previously loaded results.' : ''}</Text><TouchableOpacity accessibilityRole="button" onPress={() => fetchAnalytics(true)} style={{padding: 16}}><Text style={{color: PURPLE}}>Retry reports</Text></TouchableOpacity></View>}
         {loading && !refreshing ? (
           <ActivityIndicator size="large" color={COLORS.primary} style={{ marginVertical: 40 }} />
-        ) : (
+        ) : d ? (
           <>
             {/* Stat tiles */}
             <View style={styles.grid}>
@@ -403,7 +394,7 @@ const ReportsScreen = () => {
               <Text style={styles.caption}>Growth since the start of the period</Text>
             </View>
           </>
-        )}
+        ) : null}
       </ScrollView>
     </View>
   );
