@@ -26,10 +26,12 @@ import { getProviders } from "../../services/providerService";
 // Attempt to import react-native-maps safely
 let MapView = null;
 let Marker = null;
+let googleMapProvider;
 try {
   const Maps = require("react-native-maps");
   MapView = Maps.default;
   Marker = Maps.Marker;
+  googleMapProvider = Maps.PROVIDER_GOOGLE;
 } catch (_e) {
   console.log("react-native-maps fallback");
 }
@@ -684,6 +686,11 @@ const CustomerDashboard = ({ navigation }) => {
           <View style={{ flex: 1, backgroundColor: "#F1F5F9" }}>
             {MapView ? (
               <MapView
+                provider={Platform.OS === "android" ? googleMapProvider : undefined}
+                userInterfaceStyle="light"
+                loadingEnabled
+                loadingBackgroundColor="#F1F5F9"
+                loadingIndicatorColor="#7047FA"
                 style={{ width: "100%", height: "100%" }}
                 region={tempCoords}
                 onPress={(e) => {

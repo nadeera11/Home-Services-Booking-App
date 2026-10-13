@@ -23,10 +23,12 @@ import { useAuth } from "../../context/AuthContext";
 // Attempt to import react-native-maps safely
 let MapView = null;
 let Marker = null;
+let googleMapProvider;
 try {
   const Maps = require("react-native-maps");
   MapView = Maps.default;
   Marker = Maps.Marker;
+  googleMapProvider = Maps.PROVIDER_GOOGLE;
 } catch (e) {
   console.log("react-native-maps not natively supported in this environment, using interactive pin picker fallback.");
 }
@@ -915,6 +917,11 @@ const SignupScreen = ({ navigation }) => {
 
             {MapView ? (
               <MapView
+                provider={Platform.OS === "android" ? googleMapProvider : undefined}
+                userInterfaceStyle="light"
+                loadingEnabled
+                loadingBackgroundColor="#F1F5F9"
+                loadingIndicatorColor="#7047FA"
                 style={styles.mapElement}
                 region={tempCoords}
                 onPress={handleMapPress}
