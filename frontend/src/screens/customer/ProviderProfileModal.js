@@ -6,6 +6,8 @@ import { bookingPrice, bookingDate, pricingExplanation } from '../../services/bo
 import { BookingFlowModal } from './BookingsScreen';
 import ProviderReviewsScreen from './ProviderReviewsScreen';
 
+import ProviderReviewsScreen from './ProviderReviewsScreen';
+
 const purple = '#7047FA';
 const Icon = ({ name, color = purple, size = 22 }) => <MaterialCommunityIcons name={name} color={color} size={size} />;
 function Section({ title, detail, children }) {
@@ -17,6 +19,7 @@ function InfoRow({ icon, title, description, verified }) {
 
 export default function ProviderProfileModal({ visible, provider: p, loading, error, onClose, onRetry, onTrackBookings }) {
   const insets = useSafeAreaInsets();
+  const [showReviews, setShowReviews] = useState(false);
   const [shareError, setShareError] = useState('');
   const [showAvailability, setShowAvailability] = useState(false);
   const [showReviews, setShowReviews] = useState(false);

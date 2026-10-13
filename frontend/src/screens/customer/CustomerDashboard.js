@@ -45,7 +45,7 @@ const CATEGORIES = [
   { id: "electrical", name: "Electrical", icon: "lightning-bolt-outline", pros: "186+ pros", bg: "#FEF3C7", iconColor: "#D97706" },
   { id: "cleaning", name: "Cleaning", icon: "spray-bottle", pros: "310+ pros", bg: "#F3E8FF", iconColor: COLORS.primary },
   { id: "painting", name: "Painting", icon: "format-paint", pros: "128+ pros", bg: "#E0E7FF", iconColor: "#4F46E5" },
-  { id: "gardening", name: "Gardening", icon: "leaf-outline", pros: "94+ pros", bg: "#DCFCE7", iconColor: "#16A34A" },
+  { id: "gardening", name: "Gardening", icon: "leaf", pros: "94+ pros", bg: "#DCFCE7", iconColor: "#16A34A" },
   { id: "appliance", name: "Appliance Repair", icon: "washing-machine", pros: "112+ pros", bg: "#FFE4E6", iconColor: "#E11D48" },
 ];
 
