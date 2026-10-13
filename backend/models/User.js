@@ -8,6 +8,8 @@ const userSchema = new mongoose.Schema(
       required: [true, "Name is required"],
       trim: true,
     },
+    savedProviders: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    readCustomerEvents: { type: [String], default: [] },
     avatar: { type: String, default: "", maxlength: 1400000 },
     email: {
       type: String,

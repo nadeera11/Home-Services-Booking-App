@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import api from '../../services/api';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, BackHandler, Pressable, ScrollView, Share, StyleSheet, Text, View, Image } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bookingPrice, bookingDate, pricingExplanation } from '../../services/bookingService';
 import { BookingFlowModal } from './BookingsScreen';
-import ProviderReviewsScreen from './ProviderReviewsScreen';
 
 import ProviderReviewsScreen from './ProviderReviewsScreen';
 
@@ -19,7 +19,22 @@ function InfoRow({ icon, title, description, verified }) {
 
 export default function ProviderProfileModal({ visible, provider: p, loading, error, onClose, onRetry, onTrackBookings }) {
   const insets = useSafeAreaInsets();
-  const [showReviews, setShowReviews] = useState(false);
+ const saveLock = useRef(false);
+ const [saved, setSaved] = useState(null), [saving, setSaving] = useState(false), [saveError, setSaveError] = useState('');
+ useEffect(() => {
+  if (!visible || !p?.id) return;
+  const controller = new AbortController();
+  Promise.resolve().then(() => { if (!controller.signal.aborted) { setSaved(null); setSaveError(''); } });
+  api.get('/auth/bookmarks', { signal: controller.signal }).then(r => { if (!controller.signal.aborted) setSaved(r.data.providers.some(provider => provider.id === p.id)); }).catch(() => { if (!controller.signal.aborted) setSaveError('Unable to load bookmarks. Reopen this profile to retry.'); });
+  return () => controller.abort();
+ }, [visible, p?.id]);
+ async function toggleSaved() {
+  if (saveLock.current || saved === null) return;
+  saveLock.current = true; setSaving(true); setSaveError('');
+  try { const result = await api[saved ? 'delete' : 'put']('/auth/bookmarks/' + p.id); setSaved(result.data.saved); }
+  catch { setSaveError('Unable to save this change. Please try again.'); }
+  finally { saveLock.current = false; setSaving(false); }
+ }
   const [shareError, setShareError] = useState('');
   const [showAvailability, setShowAvailability] = useState(false);
   const [showReviews, setShowReviews] = useState(false);
@@ -56,7 +71,9 @@ export default function ProviderProfileModal({ visible, provider: p, loading, er
             <View style={styles.stat}><View style={styles.statTop}><Icon name="map-marker-outline" color="#007E5C" size={18} /><Text style={styles.statValue}>{p.serviceArea || 'Not listed'}</Text></View><Text style={styles.caption}>Service area</Text></View>
           </View>
         </View>
-        <Section title="About"><View style={styles.card}><Text style={styles.body}>{p.bio || 'This provider hasn’t added an introduction yet.'}</Text></View></Section>
+        <Pressable accessibilityRole="button" accessibilityState={{ disabled: saving || saved === null, selected: saved === true }} disabled={saving || saved === null} onPress={toggleSaved} style={styles.viewReviewsButton}><Text style={styles.viewReviewsText}>{saving ? 'Saving…' : saved ? 'Remove from saved providers' : 'Save provider'}</Text><Icon name={saved ? 'bookmark' : 'bookmark-outline'} /></Pressable>
+ {!!saveError && <Text accessibilityRole="alert" style={styles.feedback}>{saveError}</Text>}
+ <Section title="About"><View style={styles.card}><Text style={styles.body}>{p.bio || 'This provider hasn’t added an introduction yet.'}</Text></View></Section>
         <Section title="Services Offered" detail="1 service category"><View style={styles.grid}><View style={[styles.card, styles.serviceCard]}><View style={[styles.iconBox, styles.serviceIcon]}><Icon name="tools" /></View><Text style={styles.serviceTitle}>{p.category}</Text><Text style={styles.rowTitle}>{bookingPrice(p)}</Text><Text style={styles.body}>{pricingExplanation(p.pricing)}</Text>{!!p.pricing?.inclusions && <Text style={styles.body}>Included: {p.pricing.inclusions}</Text>}{!!p.pricing?.exclusions && <Text style={styles.caption}>Excluded: {p.pricing.exclusions}</Text>}</View></View></Section>
         <Section title="Qualifications"><View style={styles.card}><InfoRow icon="check-decagram-outline" title={p.qualifications || 'Qualifications not listed'} description={p.qualifications ? 'Provided by the professional' : 'No public qualification details added yet.'} /></View>{!!p.experience && <View style={[styles.card, styles.spaced]}><InfoRow icon="school-outline" title={p.experience + ' experience'} description="Professional experience" /></View>}</Section>
         <Section title="Verification"><View style={styles.card}><InfoRow icon={p.verified ? 'check' : 'shield-outline'} verified={p.verified} title={p.verified ? 'Provider Verified' : 'Verification not available'} description={p.verified ? 'Reviewed and approved by FixMate' : 'Verification details have not been provided.'} /></View></Section>
