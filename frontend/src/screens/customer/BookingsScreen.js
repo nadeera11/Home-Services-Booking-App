@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, LayoutAnimation, UIManager } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, LayoutAnimation, UIManager } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from "../../context/AuthContext";
@@ -53,7 +53,7 @@ function Button({ title, onPress, disabled, secondary, danger, arrow }) {
       accessibilityState={{ disabled: !!disabled }}
       disabled={disabled}
       onPress={onPress}
-      style={[s.button, secondary && s.secondary, danger && s.danger, disabled && s.disabled]}
+      style={({ pressed }) => [s.button, secondary && s.secondary, danger && s.danger, disabled && s.disabled, pressed && !disabled && { opacity: 0.72 }]}
     >
       <Text style={[s.buttonText, arrow && { paddingHorizontal: 24 }, secondary && s.link, danger && s.dangerText]}>
         {title}
@@ -91,19 +91,20 @@ function StatusBadge({ status }) {
   );
 }
 
-function Detail({ label, value, edit }) {
+function Detail({ label, value, edit, onPress }) {
+  const Container = onPress ? Pressable : View;
   return (
-    <View style={s.detail}>
+    <Container style={s.detail} {...(onPress ? { onPress, accessibilityRole: "link", accessibilityLabel: label + ": " + value, accessibilityHint: "Opens this address in Maps" } : {})}>
       <View style={s.flex}>
         <Text style={s.caption}>{label}</Text>
-        <Text style={s.value}>{value}</Text>
+        <Text selectable={!onPress} style={s.value}>{value}</Text>
       </View>
       {edit && (
         <Pressable accessibilityRole="button" accessibilityLabel={`Edit ${label}`} onPress={edit} style={s.edit}>
           <Text style={s.link}>Edit</Text>
         </Pressable>
       )}
-    </View>
+    </Container>
   );
 }
 
@@ -577,7 +578,7 @@ export default function BookingsScreen({ navigation, route }) {
       {!!detail && (
         <Modal visible animationType="slide" onRequestClose={() => { if (!busy) setDetail(null); }}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[s.screen, { paddingTop: insets.top }]}>
-            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[s.flowContent, { paddingBottom: Math.max(24, insets.bottom) }]}>
+            <ScrollView keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={loading} enabled={!busy} onRefresh={() => { if (!busy) { setLoading(true); void load(); } }} />} contentContainerStyle={[s.flowContent, { paddingBottom: Math.max(24, insets.bottom) }]}>
               <Text style={s.title}>{cancel ? 'Cancel booking?' : 'Booking details'}</Text>
               {!!error && <Text accessibilityRole="alert" style={s.dangerText}>{error}</Text>}
               <View style={s.card}>
@@ -588,7 +589,10 @@ export default function BookingsScreen({ navigation, route }) {
                 <Detail label="Provider" value={detail.providerName} />
                 <Detail label="Service" value={detail.service} />
                 <Detail label="Appointment" value={bookingPreference(detail)} />
-                <Detail label="Location" value={detail.location} />
+                <Detail label="Location" value={detail.location} onPress={busy ? undefined : async () => {
+                  try { await Linking.openURL('https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(detail.location)); }
+                  catch { setError('Unable to open Maps. Please try again or copy the address into your map app.'); }
+                }} />
                 <Detail label="Problem" value={detail.problem} />
                 {!!detail.notes && <Detail label="Access notes" value={detail.notes} />}
                 <Detail label="Pricing" value={bookingPrice(detail)} />
