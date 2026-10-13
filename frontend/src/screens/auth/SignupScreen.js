@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   View,
   Text,
@@ -74,14 +74,29 @@ const SignupScreen = ({ navigation }) => {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
 
+  const searchLock = useRef(false);
   const handleSearchLocation = async (overrideQuery) => {
     const q = (typeof overrideQuery === "string" ? overrideQuery : searchQuery).trim();
-    if (!q) return;
+    if (!q || searchLock.current) return;
+    searchLock.current = true;
 
     try {
       setSearchLoading(true);
       setSearchError("");
 
+      if (Platform.OS === "android") {
+        const permission = await Location.requestForegroundPermissionsAsync();
+        if (permission.status !== 'granted') {
+          setSearchError(permission.canAskAgain
+            ? 'Allow location permission to search addresses, then try Search again. You can also enter your address manually.'
+            : 'Location permission is disabled. Enable it in Android Settings > Apps > FixMate (or Expo Go) > Permissions > Location, then retry. You can also enter your address manually.');
+          return;
+        }
+        if (!await Location.hasServicesEnabledAsync()) {
+          setSearchError('Turn on Location in your phone settings, then try Search again. Your entered address has been kept.');
+          return;
+        }
+      }
       const results = await Location.geocodeAsync(q);
       if (results && results.length > 0) {
         const { latitude, longitude } = results[0];
@@ -94,10 +109,10 @@ const SignupScreen = ({ navigation }) => {
       } else {
         setSearchError(`No coordinates found for "${q}". Try another location.`);
       }
-    } catch (err) {
-      console.error("Geocode Search Error:", err);
+    } catch {
       setSearchError("Failed to search location. Please check spelling or internet.");
     } finally {
+      searchLock.current = false;
       setSearchLoading(false);
     }
   };
